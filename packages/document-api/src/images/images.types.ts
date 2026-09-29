@@ -1,6 +1,7 @@
 import type { BlockNodeAddress } from '../types/index.js';
 import type { ReceiptInsert } from '../types/receipt.js';
 import type { StoryLocator } from '../types/story.types.js';
+import type { ContentControlTarget } from '../content-controls/content-controls.types.js';
 import type {
   ImageProperties,
   ImageWrapType,
@@ -195,7 +196,17 @@ export interface CreateImageInput {
   alt?: string;
   title?: string;
   size?: ImageSize;
-  at?: ImageCreateLocation;
+  at?:
+    | ImageCreateLocation
+    | {
+        /** Insert into an existing inline content control, even when it is empty. */
+        kind: 'inContentControl';
+        target: ContentControlTarget;
+        /** Position within the control when appending; defaults to 'end'. */
+        position?: 'start' | 'end';
+        /** Replace the control's current placeholder content with the image. */
+        replaceContent?: boolean;
+      };
 }
 
 export interface ImagesListInput {

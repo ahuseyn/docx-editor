@@ -9091,6 +9091,15 @@ const operationSchemas: Record<OperationId, OperationSchemaSet> = {
               { kind: { const: 'inParagraph' }, target: blockNodeAddressSchema, offset: { type: 'integer' } },
               ['kind', 'target'],
             ),
+            objectSchema(
+              {
+                kind: { const: 'inContentControl' },
+                target: contentControlTargetSchema,
+                position: { enum: ['start', 'end'] },
+                replaceContent: { type: 'boolean' },
+              },
+              ['kind', 'target'],
+            ),
           ],
         },
       },
