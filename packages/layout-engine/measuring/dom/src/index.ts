@@ -154,9 +154,11 @@ import {
   finishTableRowMeasurementOwner,
   readRetainedTableMeasurement,
   prepareRetainedTableRows,
+  prepareBoundedTableRows,
   readRetainedTableRow,
   recordTableRowGeometry,
   recordTableMeasurementOwner,
+  recordTableMeasurementClosure,
   type RetainedTableMeasurement,
 } from './retained-table-measurement.js';
 import { computeAutoFitColumnWidths } from './autofit-columns.js';
@@ -431,6 +433,8 @@ export interface TableMeasurementObservation {
   reconciliationDeltaMs: number;
   phases: Record<TableMeasurementPhase, number>;
   rowCount: number;
+  measuredRowCount: number;
+  reusedGrid: boolean;
   cellCount: number;
   nestedBlockCount: number;
   cellBlockCache: Record<TableCellBlockMeasureCacheOutcome, number>;
@@ -4757,6 +4761,10 @@ async function recordAsyncTableMeasurementPhase<T>(
   }
 }
 
+export { readTableMeasurementClosure } from './retained-table-measurement.js';
+
+const tableWorkingInputs = new WeakMap<TableMeasure, WorkingTableGridInput>();
+
 async function measureTableBlock(
   block: TableBlock,
   constraints: MeasureConstraints,
@@ -4774,17 +4782,27 @@ async function measureTableBlock(
   });
   const measurementOwner = createTableMeasurementOwner(block, fontContext, measurementRuntimeSignature);
   const retainedTable = readRetainedTableMeasurement(constraints.retainedTable, measurementOwner);
-  const workingInput = recordTableMeasurementPhase(tableObservation, 'grid-normalization', () =>
-    buildAutoFitWorkingGridInput(block, { maxWidth }),
-  );
-  const { columnWidths, mode } = await resolveRuntimeTableColumnWidths(
-    block,
-    workingInput,
-    fontContext,
-    tableObservation,
-    constraints.tableMeasurementTrace,
-  );
-  const retainedRows = prepareRetainedTableRows(retainedTable, measurementOwner, maxWidth, columnWidths);
+  const retainedWorkingInput = retainedTable && tableWorkingInputs.get(retainedTable.measure);
+  const boundedRows = retainedWorkingInput
+    ? prepareBoundedTableRows(retainedTable, measurementOwner, maxWidth)
+    : undefined;
+  const workingInput = boundedRows
+    ? retainedWorkingInput!
+    : recordTableMeasurementPhase(tableObservation, 'grid-normalization', () =>
+        buildAutoFitWorkingGridInput(block, { maxWidth }),
+      );
+  const { columnWidths, mode } = boundedRows
+    ? { columnWidths: retainedTable!.measure.columnWidths, mode: 'fixed' as const }
+    : await resolveRuntimeTableColumnWidths(
+        block,
+        workingInput,
+        fontContext,
+        tableObservation,
+        constraints.tableMeasurementTrace,
+      );
+  const retainedRows = boundedRows
+    ? retainedTable
+    : prepareRetainedTableRows(retainedTable, measurementOwner, maxWidth, columnWidths);
 
   // Derive grid column count from computed columnWidths (handles both explicit tblGrid and fallback cases)
   const gridColumnCount = columnWidths.length;
@@ -4811,7 +4829,7 @@ async function measureTableBlock(
   const rowspanTracker: number[] = new Array(gridColumnCount).fill(0);
 
   // Measure each cell paragraph with appropriate column width based on colspan
-  const rows: TableRowMeasure[] = [];
+  const rows: TableRowMeasure[] = boundedRows ? retainedTable!.measure.rows.slice() : [];
   const rowBaseHeights: number[] = new Array(block.rows.length).fill(0);
   const rowAuthoredHeightPadding: number[] = Array.from({ length: block.rows.length }, () => 0);
   // `w:trHeight` describes the row's authored inner height. In Word's
@@ -4823,7 +4841,9 @@ async function measureTableBlock(
   const rowAssemblyStartedAt = tableMeasurementNow();
   const cellMeasurementBeforeRows = tableObservation.phases['cell-block-measurement'];
   let cellsSinceCheckpoint = 0;
-  for (let rowIndex = 0; rowIndex < block.rows.length; rowIndex++) {
+  const rowIndices = boundedRows ?? Array.from({ length: block.rows.length }, (_, index) => index);
+  let measuredRowCount = 0;
+  for (const rowIndex of rowIndices) {
     const row = block.rows[rowIndex];
     const retainedRow = readRetainedTableRow(retainedRows, measurementOwner, rowIndex);
     if (retainedRow) {
@@ -4833,12 +4853,13 @@ async function measureTableBlock(
         const checkpoint = measurementCheckpointIfDue(fontContext);
         if (checkpoint) await checkpoint;
       }
-      rows.push(retainedRow.measure);
+      rows[rowIndex] = retainedRow.measure;
       rowBaseHeights[rowIndex] = retainedRow.geometry.baseHeight;
       rowAuthoredHeightPadding[rowIndex] = retainedRow.geometry.authoredPadding;
       rowAuthoredHeightChrome[rowIndex] = retainedRow.geometry.authoredChrome;
       continue;
     }
+    measuredRowCount++;
     const rowMeasurementOwner = createTableRowMeasurementOwner(measurementOwner, rowIndex);
     const normalizedRow = workingInput.rows[rowIndex];
     const cellMeasures: TableCellMeasure[] = [];
@@ -5118,7 +5139,7 @@ async function measureTableBlock(
       rowAuthoredHeightPadding[rowIndex],
       rowAuthoredHeightChrome[rowIndex],
     );
-    rows.push(rowMeasure);
+    rows[rowIndex] = rowMeasure;
   }
   const rowAssemblyWallMs = tableMeasurementNow() - rowAssemblyStartedAt;
   const cellMeasurementInsideRows = tableObservation.phases['cell-block-measurement'] - cellMeasurementBeforeRows;
@@ -5145,7 +5166,8 @@ async function measureTableBlock(
     }
 
     // Apply explicit row heights (exact / atLeast) from row attributes
-    block.rows.forEach((row, index) => {
+    rowIndices.forEach((index) => {
+      const row = block.rows[index]!;
       const spec = row.attrs?.rowHeight as { value?: number; rule?: string } | undefined;
       if (spec?.value != null && Number.isFinite(spec.value)) {
         const rule = spec.rule ?? 'atLeast';
@@ -5163,14 +5185,18 @@ async function measureTableBlock(
     return resolvedRowHeights;
   });
 
-  for (let i = 0; i < rows.length; i++) {
+  for (const i of rowIndices) {
     const height = Math.max(0, rowHeights[i]);
     if (rows[i] === retainedRows?.measure.rows[i]) {
       if (rows[i].height !== height) rows[i] = { ...rows[i], height };
     } else rows[i].height = height;
   }
 
-  const contentHeight = rowHeights.reduce((sum, h) => sum + h, 0);
+  // Preserve the canonical left-to-right floating-point accumulation exactly.
+  // A height-delta addition changes rounding and can alter convergence keys.
+  const contentHeight = boundedRows
+    ? rows.reduce((sum, row) => sum + row.height, 0)
+    : rowHeights.reduce((sum, h) => sum + h, 0);
   const contentWidth = columnWidths.reduce((a, b) => a + b, 0);
 
   // Cell margins (OOXML cellMargins) are applied as cell padding (attrs.padding) and are already
@@ -5217,6 +5243,8 @@ async function measureTableBlock(
     reconciliationDeltaMs: Math.abs(totalWallMs - attributedWallMs),
     phases: tableObservation.phases,
     rowCount: block.rows.length,
+    measuredRowCount,
+    reusedGrid: boundedRows != null,
     cellCount: block.rows.reduce((sum, row) => sum + row.cells.length, 0),
     nestedBlockCount: block.rows.reduce(
       (rowSum, row) =>
@@ -5228,6 +5256,8 @@ async function measureTableBlock(
     autoFitTableResultCache: tableObservation.autoFitTableResultCache,
   });
   recordTableMeasurementOwner(measure, measurementOwner, maxWidth);
+  tableWorkingInputs.set(measure, workingInput);
+  if (boundedRows) recordTableMeasurementClosure(measure, retainedTable!, boundedRows);
   return measure;
 }
 

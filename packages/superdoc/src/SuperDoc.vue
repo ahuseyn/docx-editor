@@ -2320,6 +2320,7 @@ const editorOptions = (doc) => {
     onPageCountKnown: proxy.$superdoc.config.onPageCountKnown ?? null,
     onReviewWindowCommitted: (payload) => {
       v2ReviewWindowController.onCommittedPagePaint?.({ ...payload, documentId: doc.id });
+      v2GeometryPublisher.noteCommittedPageWindow?.(payload);
     },
     // `fonts-changed` is relayed through SuperDoc.ts from the active v2 font facet.
     // Passing the config callback directly here would double-deliver every v2 report.

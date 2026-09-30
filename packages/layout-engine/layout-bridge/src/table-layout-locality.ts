@@ -1,4 +1,5 @@
 import type { TableBlock, TableFragment, TableMeasure } from '@superdoc/contracts';
+import { readTableMeasurementClosure } from '@superdoc/measuring-dom';
 import { computeTableDirtyRowRange } from './diff.js';
 
 export type TableLayoutLocality = {
@@ -50,6 +51,17 @@ export function analyzeTableLayoutLocality(input: {
   previousMeasure: TableMeasure;
   currentMeasure: TableMeasure;
 }): TableLayoutLocality | null {
+  const closure = readTableMeasurementClosure(input);
+  if (closure)
+    return {
+      blockId: input.currentBlock.id,
+      ...input,
+      previousFirstAffectedRow: closure.firstAffectedRow,
+      previousLastAffectedRowExclusive: closure.lastAffectedRowExclusive,
+      currentFirstAffectedRow: closure.firstAffectedRow,
+      currentLastAffectedRowExclusive: closure.lastAffectedRowExclusive,
+      stableSuffixRowStart: closure.lastAffectedRowExclusive,
+    };
   const dirtyRows = computeTableDirtyRowRange(input.previousBlock, input.currentBlock);
   if (!dirtyRows) return null;
 

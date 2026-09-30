@@ -712,8 +712,8 @@ const hashStableValue = (seed: number, value: unknown): number => {
 const hashMeasurementNumber = (seed: number, value: number | undefined): number =>
   hashString(seed, value == null || !Number.isFinite(value) ? '' : String(value));
 
-const deriveTableBlockStructureVersion = (block: TableBlock): string => {
-  const cached = tableBlockStructureVersionCache.get(block);
+const deriveTableBlockStructureVersion = (block: TableBlock, rowIndices?: readonly number[]): string => {
+  const cached = rowIndices ? undefined : tableBlockStructureVersionCache.get(block);
   if (cached != null) return cached;
 
   let hash = 2166136261;
@@ -723,7 +723,9 @@ const deriveTableBlockStructureVersion = (block: TableBlock): string => {
   hash = hashStableValue(hash, block.columnWidths);
   hash = hashStableValue(hash, block.anchor);
   hash = hashStableValue(hash, block.wrap);
-  for (const row of block.rows) {
+  for (const rowIndex of rowIndices ?? block.rows.map((_, index) => index)) {
+    const row = block.rows[rowIndex]!;
+    hash = hashNumber(hash, rowIndex);
     hash = hashStableValue(hash, row.attrs);
     hash = hashNumber(hash, row.cells.length);
     for (const cell of row.cells) {
@@ -734,22 +736,25 @@ const deriveTableBlockStructureVersion = (block: TableBlock): string => {
   }
 
   const version = hash.toString(16);
-  tableBlockStructureVersionCache.set(block, version);
+  if (!rowIndices) tableBlockStructureVersionCache.set(block, version);
   return version;
 };
 
-const deriveTableMeasureStructureVersion = (measure: TableMeasure): string => {
-  const cached = tableMeasureStructureVersionCache.get(measure);
+const deriveTableMeasureStructureVersion = (measure: TableMeasure, rowIndices?: readonly number[]): string => {
+  const cached = rowIndices ? undefined : tableMeasureStructureVersionCache.get(measure);
   if (cached != null) return cached;
 
   let hash = 2166136261;
   hash = hashStableValue(hash, measure.columnWidths);
   hash = hashMeasurementNumber(hash, measure.totalWidth);
-  hash = hashMeasurementNumber(hash, measure.totalHeight);
+  if (!rowIndices) hash = hashMeasurementNumber(hash, measure.totalHeight);
   hash = hashMeasurementNumber(hash, measure.cellSpacingPx);
   hash = hashStableValue(hash, measure.tableBorderWidths);
   hash = hashNumber(hash, measure.rows.length);
-  for (const row of measure.rows) {
+  for (const rowIndex of rowIndices ?? measure.rows.map((_, index) => index)) {
+    const row = measure.rows[rowIndex];
+    hash = hashNumber(hash, rowIndex);
+    if (!row) continue;
     hash = hashMeasurementNumber(hash, row.height);
     hash = hashNumber(hash, row.cells.length);
     for (const cell of row.cells) {
@@ -762,8 +767,37 @@ const deriveTableMeasureStructureVersion = (measure: TableMeasure): string => {
   }
 
   const version = hash.toString(16);
-  tableMeasureStructureVersionCache.set(measure, version);
+  if (!rowIndices) tableMeasureStructureVersionCache.set(measure, version);
   return version;
+};
+
+const tableRowSpanAdmissionCache = new WeakMap<TableBlock, WeakMap<TableMeasure, boolean>>();
+
+/** Spanning cells read heights and occupancy outside the painted row window. */
+const hasOnlyIndependentTableRows = (block: TableBlock, measure: TableMeasure): boolean => {
+  let byMeasure = tableRowSpanAdmissionCache.get(block);
+  const cached = byMeasure?.get(measure);
+  if (cached !== undefined) return cached;
+  const independent =
+    block.rows.length === measure.rows.length &&
+    block.rows.every((row) => row.cells.every((cell) => (cell.rowSpan ?? 1) === 1)) &&
+    measure.rows.every((row) => row.cells.every((cell) => (cell.rowSpan ?? 1) === 1));
+  if (!byMeasure) {
+    byMeasure = new WeakMap();
+    tableRowSpanAdmissionCache.set(block, byMeasure);
+  }
+  byMeasure.set(measure, independent);
+  return independent;
+};
+
+/** Borders read adjacent rows even when their content belongs to another page. */
+const tableBorderDependencyRows = (painted: readonly number[], rowCount: number): number[] => {
+  const dependencies = new Set(painted);
+  for (const row of painted) {
+    if (row > 0) dependencies.add(row - 1);
+    if (row + 1 < rowCount) dependencies.add(row + 1);
+  }
+  return [...dependencies].sort((left, right) => left - right);
 };
 
 const renderedTableRowIndices = (fragment: TableFragment, rowCount: number): number[] => {
@@ -813,6 +847,9 @@ export const deriveTableFragmentPaintVersion = (
   measure: TableMeasure,
 ): string => {
   const rowIndices = renderedTableRowIndices(fragment, block.rows.length);
+  const dependencyRows = hasOnlyIndependentTableRows(block, measure)
+    ? tableBorderDependencyRows(rowIndices, block.rows.length)
+    : undefined;
   const localBlock: TableBlock = {
     ...block,
     rows: rowIndices.map((rowIndex) => block.rows[rowIndex]!),
@@ -833,8 +870,8 @@ export const deriveTableFragmentPaintVersion = (
     fragment.metadata,
   ).toString(16);
   const localBlockVersion = [
-    deriveTableBlockStructureVersion(block),
-    deriveTableMeasureStructureVersion(measure),
+    deriveTableBlockStructureVersion(block, dependencyRows),
+    deriveTableMeasureStructureVersion(measure, dependencyRows),
     rowIndices.join(','),
     deriveBlockVersion(localBlock),
     identityHash.toString(16),

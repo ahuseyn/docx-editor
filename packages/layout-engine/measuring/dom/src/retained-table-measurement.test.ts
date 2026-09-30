@@ -76,7 +76,7 @@ const fontContext = (fontSignature = 'retained-table-fonts'): FontMeasureContext
 async function measure(
   runtime: DomMeasurementRuntime,
   block: TableBlock,
-  retainedTable?: { block: TableBlock; measure: TableMeasure },
+  retainedTable?: import('./retained-table-measurement.js').RetainedTableMeasurement,
   width = 1920,
   fonts = fontContext(),
 ): Promise<{ measure: TableMeasure; observation: TableMeasurementObservation }> {
@@ -369,4 +369,52 @@ describe('retained table paragraph measurement', () => {
       runtime.dispose();
     }
   });
+});
+
+it('consumes the canonical paragraph replacement for fixed-table growth and shrink with cold parity', async () => {
+  configureMeasurement({ mode: 'deterministic' });
+  const runtime = createDomMeasurementRuntime();
+  const coldRuntime = createDomMeasurementRuntime();
+  try {
+    let block = freezeData(tableGrid(251, 2));
+    let previous = await measure(runtime, block, undefined, 192);
+    for (const text of ['long wrapped text '.repeat(30), 'short']) {
+      const current = editCell(block, 120, text);
+      const next = await measure(
+        runtime,
+        current,
+        {
+          block,
+          measure: previous.measure,
+          paragraphReplacement: { current, rowIndex: 120, cellIndex: 0, blockIndex: 0 },
+        },
+        192,
+      );
+      const cold = await measure(coldRuntime, current, undefined, 192);
+      expect(next.measure).toEqual(cold.measure);
+      expect(next.observation.reusedGrid).toBe(true);
+      expect(next.observation.measuredRowCount).toBe(2);
+      expect(next.measure.rows[119]).toBe(previous.measure.rows[119]);
+      expect(next.measure.rows[122]).toBe(previous.measure.rows[122]);
+      expect(next.measure.rows[120]!.height).not.toBe(previous.measure.rows[120]!.height);
+      block = current;
+      previous = next;
+    }
+    const changedWidth = freezeData({ ...editCell(block, 120, 'new'), columnWidths: [80, 112] });
+    const rejected = await measure(
+      runtime,
+      changedWidth,
+      {
+        block,
+        measure: previous.measure,
+        paragraphReplacement: { current: changedWidth, rowIndex: 120, cellIndex: 0, blockIndex: 0 },
+      },
+      192,
+    );
+    expect(rejected.observation.reusedGrid).toBe(false);
+    expect(rejected.measure).toEqual((await measure(coldRuntime, changedWidth, undefined, 192)).measure);
+  } finally {
+    runtime.dispose();
+    coldRuntime.dispose();
+  }
 });

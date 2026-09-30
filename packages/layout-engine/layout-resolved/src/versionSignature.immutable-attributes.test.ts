@@ -232,3 +232,106 @@ describe('immutable table attribute hash reuse', () => {
     }
   });
 });
+
+describe('table fragment geometry dependency closure', () => {
+  function inputs() {
+    const block: TableBlock = {
+      kind: 'table',
+      id: 'growth-table',
+      columnWidths: [100],
+      rows: Array.from({ length: 8 }, (_, index) => ({
+        id: `row-${index}`,
+        cells: [
+          {
+            id: `cell-${index}`,
+            blocks: [
+              {
+                kind: 'paragraph' as const,
+                id: `paragraph-${index}`,
+                runs: [{ text: `row ${index}`, fontFamily: 'Arial', fontSize: 12 }],
+              },
+            ],
+          },
+        ],
+      })),
+    };
+    const measure: TableMeasure = {
+      kind: 'table',
+      columnWidths: [100],
+      totalWidth: 100,
+      totalHeight: 160,
+      rows: block.rows.map(() => ({ height: 20, cells: [{ width: 100, height: 20, gridColumnStart: 0 }] })),
+    };
+    const fragment: TableFragment = {
+      kind: 'table',
+      blockId: block.id,
+      fromRow: 0,
+      toRow: 2,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 40,
+    };
+    return { block, measure, fragment };
+  }
+
+  it.each([60, 10])('reuses an earlier fragment when an unrelated later row changes height to %i', (height) => {
+    const before = inputs();
+    const after = inputs();
+    after.measure.rows[6]!.height = height;
+    after.measure.rows[6]!.cells[0]!.height = height;
+    after.measure.totalHeight += height - 20;
+    after.block.rows[6]!.cells[0]!.blocks![0] = {
+      kind: 'paragraph',
+      id: 'paragraph-6',
+      runs: [{ text: 'changed row', fontFamily: 'Arial', fontSize: 12 }],
+    };
+    expect(deriveTableFragmentPaintVersion(after.fragment, after.block, after.measure)).toBe(
+      deriveTableFragmentPaintVersion(before.fragment, before.block, before.measure),
+    );
+  });
+
+  it('invalidates visible-row geometry, adjacent borders, repeated headers, and global widths', () => {
+    const before = inputs();
+    const baseline = deriveTableFragmentPaintVersion(before.fragment, before.block, before.measure);
+    for (const mutation of [
+      (input: ReturnType<typeof inputs>) => {
+        input.measure.rows[1]!.height += 1;
+      },
+      (input: ReturnType<typeof inputs>) => {
+        input.block.rows[2]!.cells[0]!.attrs = {
+          borders: { top: { style: 'single', size: 8, color: 'ff0000' } },
+        } as CellAttrs;
+      },
+      (input: ReturnType<typeof inputs>) => {
+        input.measure.columnWidths = [101];
+      },
+    ]) {
+      const after = inputs();
+      mutation(after);
+      expect(deriveTableFragmentPaintVersion(after.fragment, after.block, after.measure)).not.toBe(baseline);
+    }
+    const headerBefore = inputs();
+    headerBefore.fragment = { ...headerBefore.fragment, fromRow: 6, toRow: 8, repeatHeaderCount: 1 };
+    const headerAfter = inputs();
+    headerAfter.fragment = headerBefore.fragment;
+    headerAfter.measure.rows[0]!.height += 1;
+    expect(deriveTableFragmentPaintVersion(headerAfter.fragment, headerAfter.block, headerAfter.measure)).not.toBe(
+      deriveTableFragmentPaintVersion(headerBefore.fragment, headerBefore.block, headerBefore.measure),
+    );
+  });
+
+  it('keeps the conservative complete dependency signature for spanning cells', () => {
+    const before = inputs();
+    const after = inputs();
+    for (const input of [before, after]) {
+      input.block.rows[0]!.cells[0]!.rowSpan = 7;
+      input.measure.rows[0]!.cells[0]!.rowSpan = 7;
+    }
+    after.measure.rows[6]!.height += 10;
+    after.measure.totalHeight += 10;
+    expect(deriveTableFragmentPaintVersion(after.fragment, after.block, after.measure)).not.toBe(
+      deriveTableFragmentPaintVersion(before.fragment, before.block, before.measure),
+    );
+  });
+});

@@ -2,7 +2,19 @@ import type { TableBlock, TableMeasure, TableRowMeasure } from '@superdoc/contra
 import type { FontMeasureContext } from '@superdoc/font-system';
 import { getSurfaceMeasurementRuntime, type SurfaceMeasurementRuntimeState } from './measurement-runtime-context.js';
 
-export type RetainedTableMeasurement = { block: TableBlock; measure: TableMeasure };
+export type RetainedTableMeasurement = {
+  block: TableBlock;
+  measure: TableMeasure;
+  /** Trusted canonical projection producer's exact single-paragraph replacement. */
+  paragraphReplacement?: {
+    readonly current: TableBlock;
+    readonly currentLayoutBlock?: TableBlock;
+    readonly previousLayoutBlock?: TableBlock;
+    readonly rowIndex: number;
+    readonly cellIndex: number;
+    readonly blockIndex: number;
+  };
+};
 
 type TableMeasurementOwner = {
   block: TableBlock;
@@ -310,6 +322,61 @@ export function prepareRetainedTableRows(
   return retained;
 }
 
+/** Consume the canonical splice proof; row content certification still happens during measurement. */
+export function prepareBoundedTableRows(
+  retained: RetainedTableMeasurement | undefined,
+  owner: TableMeasurementOwner | null,
+  maxWidth: number,
+): readonly number[] | undefined {
+  const change = retained?.paragraphReplacement;
+  if (!retained || !change || !owner?.immutable || !hasStandardObjectPrototype()) return undefined;
+  const previous = measurementOwners.get(retained.measure);
+  const block = owner.block;
+  const { rowIndex, cellIndex, blockIndex } = change;
+  if (
+    change.current !== block ||
+    !previous?.rowsReusable ||
+    maxWidth !== previous.maxWidth ||
+    block.attrs?.tableLayout !== 'fixed' ||
+    block.attrs !== retained.block.attrs ||
+    block.columnWidths !== retained.block.columnWidths ||
+    block.rows.length !== retained.block.rows.length ||
+    ![rowIndex, cellIndex, blockIndex].every((index) => Number.isSafeInteger(index) && index >= 0)
+  )
+    return undefined;
+  const row = block.rows[rowIndex];
+  const oldRow = retained.block.rows[rowIndex];
+  const cell = row?.cells[cellIndex];
+  const oldCell = oldRow?.cells[cellIndex];
+  if (
+    !row ||
+    !oldRow ||
+    !cell ||
+    !oldCell ||
+    !hasFrozenReusableTopology(row) ||
+    row.attrs !== oldRow.attrs ||
+    row.cells.length !== oldRow.cells.length ||
+    cell.attrs !== oldCell.attrs ||
+    cell.colSpan !== oldCell.colSpan ||
+    cell.rowSpan !== oldCell.rowSpan ||
+    cell.blocks?.length !== oldCell.blocks?.length ||
+    cell.blocks?.[blockIndex]?.kind !== 'paragraph' ||
+    oldCell.blocks?.[blockIndex]?.kind !== 'paragraph' ||
+    cell.blocks[blockIndex]!.id !== oldCell.blocks[blockIndex]!.id
+  )
+    return undefined;
+  if (
+    row.cells.some((value, index) => index !== cellIndex && value !== oldRow.cells[index]) ||
+    cell.blocks.some((value, index) => index !== blockIndex && value !== oldCell.blocks![index])
+  )
+    return undefined;
+  // The successor owns a collapsed-border dependency on this row. Height
+  // changes are permitted; pagination consumes the newly measured heights.
+  const dirty = rowIndex + 1 < block.rows.length ? [rowIndex, rowIndex + 1] : [rowIndex];
+  owner.rowsCertified = block.rows.length - dirty.length;
+  return dirty;
+}
+
 export function readRetainedTableRow(
   retained: RetainedTableMeasurement | undefined,
   owner: TableMeasurementOwner | null,
@@ -381,4 +448,43 @@ export function recordTableMeasurementOwner(
       rowsReusable: owner.rowsReusable && hasStandardObjectPrototype(),
     });
   }
+}
+
+type TableMeasurementClosure = {
+  previousBlock: WeakSet<TableBlock>;
+  currentBlock: WeakSet<TableBlock>;
+  previousMeasure: WeakSet<TableMeasure>;
+  firstAffectedRow: number;
+  lastAffectedRowExclusive: number;
+};
+const measurementClosures = new WeakMap<TableMeasure, TableMeasurementClosure>();
+
+export function recordTableMeasurementClosure(
+  currentMeasure: TableMeasure,
+  retained: RetainedTableMeasurement,
+  rows: readonly number[],
+): void {
+  const change = retained.paragraphReplacement!;
+  measurementClosures.set(currentMeasure, {
+    previousBlock: new WeakSet([change.previousLayoutBlock ?? retained.block]),
+    currentBlock: new WeakSet([change.currentLayoutBlock ?? change.current]),
+    previousMeasure: new WeakSet([retained.measure]),
+    firstAffectedRow: rows[0]!,
+    lastAffectedRowExclusive: rows[rows.length - 1]! + 1,
+  });
+}
+
+/** Exact identities join the measured row closure to canonical pagination. */
+export function readTableMeasurementClosure(input: {
+  previousBlock: TableBlock;
+  currentBlock: TableBlock;
+  previousMeasure: TableMeasure;
+  currentMeasure: TableMeasure;
+}): { firstAffectedRow: number; lastAffectedRowExclusive: number } | null {
+  const closure = measurementClosures.get(input.currentMeasure);
+  return closure?.previousBlock.has(input.previousBlock) &&
+    closure.currentBlock.has(input.currentBlock) &&
+    closure.previousMeasure.has(input.previousMeasure)
+    ? { firstAffectedRow: closure.firstAffectedRow, lastAffectedRowExclusive: closure.lastAffectedRowExclusive }
+    : null;
 }

@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
+import '../../measuring/dom/vitest.setup';
 import { expect, it } from 'vite-plus/test';
 import type { FlowBlock, ParagraphBlock, TableBlock, TableMeasure } from '@superdoc/contracts';
-import { createDomMeasurementRuntime, type TableMeasurementObservation } from '@superdoc/measuring-dom';
+import {
+  createDomMeasurementRuntime,
+  readTableMeasurementClosure,
+  type TableMeasurementObservation,
+} from '@superdoc/measuring-dom';
 import { computeDirtyRegions } from '../src/diff.js';
+import { analyzeTableLayoutLocality } from '../src/table-layout-locality.js';
 import { clearIncrementalModuleState, incrementalLayout, type IncrementalMeasureReuseProof } from '../src/index.js';
 import { measureCache } from '../src/incrementalLayout.js';
 
@@ -16,7 +22,7 @@ function freezeData<T>(value: T): T {
   return value;
 }
 
-it('carries retained row and cell measurements through the bridge to the surface runtime', async () => {
+it('carries the canonical paragraph proof through changing-height measurement and table pagination locality', async () => {
   clearIncrementalModuleState();
   const runtime = createDomMeasurementRuntime();
   const coldRuntime = createDomMeasurementRuntime();
@@ -111,6 +117,14 @@ it('carries retained row and cell measurements through the bridge to the surface
       (block, constraints) =>
         editPass.measureBlock(block, {
           ...constraints,
+          ...(constraints.retainedTable
+            ? {
+                retainedTable: {
+                  ...constraints.retainedTable,
+                  paragraphReplacement: { current: edited, rowIndex: 2, cellIndex: 0, blockIndex: 0 },
+                },
+              }
+            : {}),
           tableMeasurementTrace: {
             depth: 0,
             cacheIdentity: 'strict',
@@ -132,6 +146,22 @@ it('carries retained row and cell measurements through the bridge to the surface
     expect(observation?.cellBlockCache.miss).toBe(1);
     const previousTable = initial.measures[0] as TableMeasure;
     const currentTable = result.measures[0] as TableMeasure;
+    expect(observation?.reusedGrid).toBe(true);
+    expect(observation?.measuredRowCount).toBe(2);
+    const closureInput = {
+      previousBlock: original,
+      currentBlock: edited,
+      previousMeasure: previousTable,
+      currentMeasure: currentTable,
+    };
+    expect(readTableMeasurementClosure(closureInput)).toEqual({ firstAffectedRow: 2, lastAffectedRowExclusive: 4 });
+    expect(analyzeTableLayoutLocality(closureInput)).toMatchObject({
+      currentFirstAffectedRow: 2,
+      currentLastAffectedRowExclusive: 4,
+      stableSuffixRowStart: 4,
+    });
+    expect(readTableMeasurementClosure({ ...closureInput, currentBlock: { ...edited } })).toBeNull();
+    expect(readTableMeasurementClosure({ ...closureInput, previousMeasure: { ...previousTable } })).toBeNull();
     expect(currentTable.rows[2]).not.toBe(previousTable.rows[2]);
     for (const row of [0, 1, 4, 5]) {
       expect(currentTable.rows[row]).toBe(previousTable.rows[row]);
