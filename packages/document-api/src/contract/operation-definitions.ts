@@ -5728,13 +5728,14 @@ export const OPERATION_DEFINITIONS = {
   'bookmarks.insert': {
     memberPath: 'bookmarks.insert',
     description: 'Insert a new named bookmark at a target location.',
-    expectedResult: 'Returns a BookmarkMutationResult indicating success with the bookmark address or a failure.',
+    expectedResult:
+      'Returns a BookmarkMutationResult indicating success with the bookmark address or a failure. Invalid nonempty creation names return INVALID_PAYLOAD without mutation.',
     requiresDocumentContext: true,
     metadata: mutationOperation({
       idempotency: 'non-idempotent',
       supportsDryRun: true,
       trackedSupport: 'never',
-      possibleFailureCodes: NONE_FAILURES,
+      possibleFailureCodes: ['INVALID_PAYLOAD'],
       throws: T_REF_INSERT,
     }),
     referenceDocPath: 'bookmarks/insert.mdx',

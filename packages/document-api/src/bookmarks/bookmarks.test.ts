@@ -79,6 +79,37 @@ describe('bookmarks validation', () => {
 
   // ── Input validation ────────────────────────────────────────────────
   describe('executeBookmarksInsert', () => {
+    it.each([
+      'has spaces',
+      '9starts_with_digit',
+      'x'.repeat(60),
+      'x'.repeat(41),
+      '_hidden',
+      'a=b',
+      'a-b',
+      'a\n',
+      'a\u200db',
+      'a\u20dd',
+      '𐐀'.repeat(21),
+    ])('rejects an invalid creation name %j before adapter delegation', (name) => {
+      const adapter = makeAdapter();
+      for (const dryRun of [false, true]) {
+        const result = executeBookmarksInsert(adapter, { name } as any, { dryRun });
+        expect(result).toMatchObject({ success: false, failure: { code: 'INVALID_PAYLOAD' } });
+      }
+      expect(adapter.insert).not.toHaveBeenCalled();
+    });
+
+    it.each(['A', 'ok_name', 'a'.repeat(40), 'école', '中文', 'αριθμός', 'e\u0301cole', 'a١', '𐐀'.repeat(20)])(
+      'preserves a valid creation name %j',
+      (name) => {
+        const adapter = makeAdapter();
+        const input = { name };
+        executeBookmarksInsert(adapter, input as any);
+        expect(adapter.insert).toHaveBeenCalledWith(input, { changeMode: 'direct', dryRun: false });
+      },
+    );
+
     it('throws INVALID_INPUT when name is empty', () => {
       const adapter = makeAdapter();
       expect(() => executeBookmarksInsert(adapter, { name: '' } as any)).toThrow(DocumentApiValidationError);

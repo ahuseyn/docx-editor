@@ -9839,7 +9839,11 @@ const operationSchemas: Record<OperationId, OperationSchemaSet> = {
   'bookmarks.insert': {
     input: objectSchema(
       {
-        name: { type: 'string' },
+        name: {
+          type: 'string',
+          description:
+            'Visible bookmark creation name: starts with a Unicode letter, followed by letters, nonspacing/spacing combining marks, decimal digits or underscores; at most 40 UTF-16 code units. Invalid nonempty names return INVALID_PAYLOAD without mutation. Names are not normalized or truncated; imported names are unaffected.',
+        },
         at: textTargetSchema,
         tableColumn: objectSchema({ colFirst: { type: 'integer' }, colLast: { type: 'integer' } }, [
           'colFirst',
