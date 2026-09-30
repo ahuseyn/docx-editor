@@ -39,7 +39,7 @@ test('opens a DOCX URL in the document editor', async ({ page }) => {
     new SuperDoc({ selector: '#editor', document: '/contract.docx' });
   });
 
-  await expect(page.locator('[data-editor-host="v2"]')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-editor-host="v2"][data-editor-chrome="true"]')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('.superdoc-page').first()).toBeVisible({ timeout: 60_000 });
 });
 

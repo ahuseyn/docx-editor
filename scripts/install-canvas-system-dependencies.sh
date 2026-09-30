@@ -66,18 +66,39 @@ stabilize_github_apt_mirrors() {
   if ! grep -qF 'azure.archive.ubuntu.com' "${apt_mirror_file}"; then
     return 0
   fi
-  if ! grep -Eq 'https?://(archive|security)\.ubuntu\.com/ubuntu/' "${apt_mirror_file}"; then
-    echo "::warning::Azure apt mirror is configured without an official Ubuntu fallback; leaving it unchanged."
+  if ! grep -Eq 'https?://((archive|security)\.ubuntu\.com|mirrors\.edge\.kernel\.org)/ubuntu/' "${apt_mirror_file}"; then
+    echo "::warning::Azure apt mirror is configured without a known Ubuntu fallback; leaving it unchanged."
     return 0
   fi
 
   local filtered_mirrors
   filtered_mirrors="$(mktemp)"
-  awk '!/azure\.archive\.ubuntu\.com/' "${apt_mirror_file}" > "${filtered_mirrors}"
+  awk '!/azure\.archive\.ubuntu\.com/' "${apt_mirror_file}" |
+    sed -E 's#http://(archive\.ubuntu\.com|security\.ubuntu\.com|mirrors\.edge\.kernel\.org)/ubuntu/#https://\1/ubuntu/#g' > "${filtered_mirrors}"
   sudo cp "${filtered_mirrors}" "${apt_mirror_file}"
   rm -f "${filtered_mirrors}"
-  echo "::notice::Bypassing the unhealthy Azure apt mirror; using the configured official Ubuntu fallbacks."
+  echo "::notice::Bypassing the unhealthy Azure apt mirror; using HTTPS Ubuntu fallbacks."
 }
+
+select_active_ubuntu_mirror_file() {
+  if [ -n "${APT_MIRROR_FILE:-}" ] || [ ! -f "${apt_ubuntu_sources_file}" ]; then
+    return 0
+  fi
+
+  local source_line
+  while IFS= read -r source_line; do
+    if [[ "${source_line}" =~ ^[[:space:]]*URIs:[[:space:]]*mirror\+file:(/[^[:space:]]+) ]]; then
+      apt_mirror_file="${BASH_REMATCH[1]}"
+      return 0
+    fi
+  done < "${apt_ubuntu_sources_file}"
+}
+
+if [ "${1:-}" = "--prepare-mirrors" ]; then
+  select_active_ubuntu_mirror_file
+  stabilize_github_apt_mirrors
+  exit 0
+fi
 
 missing_packages=()
 for package in "${canvas_packages[@]}"; do
@@ -91,6 +112,7 @@ if ((${#missing_packages[@]} == 0)); then
   exit 0
 fi
 
+select_active_ubuntu_mirror_file
 stabilize_github_apt_mirrors
 if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ -f "${apt_ubuntu_sources_file}" ]; then
   # Canvas packages come from Ubuntu; unrelated runner repositories can have

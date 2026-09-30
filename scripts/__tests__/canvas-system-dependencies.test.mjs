@@ -36,23 +36,23 @@ test('canvas system dependency installer guards apt commands with timeout and di
   assert.ok(content.includes('fuser -v /var/lib/dpkg/lock'));
 });
 
-test('canvas system dependency installer bypasses the unhealthy Azure mirror', async (t) => {
+test('canvas system dependency installer uses HTTPS fallbacks in the active Blacksmith mirror list', async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'canvas-apt-'));
   t.after(() => rm(root, { recursive: true, force: true }));
 
   const bin = path.join(root, 'bin');
-  const mirrorFile = path.join(root, 'apt-mirrors.txt');
+  const mirrorFile = path.join(root, 'blacksmith-ubuntu-mirrors.txt');
+  const sourceFile = path.join(root, 'ubuntu.sources');
   const aptLog = path.join(root, 'apt.log');
   await mkdir(bin);
-  await writeFile(
-    mirrorFile,
-    [
-      'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1',
-      'https://archive.ubuntu.com/ubuntu/\tpriority:2',
-      'https://security.ubuntu.com/ubuntu/\tpriority:3',
-      '',
-    ].join('\n'),
-  );
+  const originalMirrors = [
+    'http://azure.archive.ubuntu.com/ubuntu/\tpriority:1',
+    'http://mirrors.edge.kernel.org/ubuntu/\tpriority:2',
+    'http://archive.ubuntu.com/ubuntu/\tpriority:3',
+    '',
+  ].join('\n');
+  await writeFile(mirrorFile, originalMirrors);
+  await writeFile(sourceFile, `Types: deb\nURIs: mirror+file:${mirrorFile}\nSuites: noble\nComponents: main\n`);
   await writeFile(path.join(bin, 'dpkg-query'), '#!/usr/bin/env bash\nexit 1\n');
   await writeFile(path.join(bin, 'sudo'), '#!/usr/bin/env bash\nexec "$@"\n');
   await writeFile(path.join(bin, 'timeout'), '#!/usr/bin/env bash\nshift\nexec "$@"\n');
@@ -64,24 +64,26 @@ test('canvas system dependency installer bypasses the unhealthy Azure mirror', a
     ['dpkg-query', 'sudo', 'timeout', 'apt-get'].map((name) => chmod(path.join(bin, name), 0o755)),
   );
 
-  await execFileAsync(
-    'bash',
-    [path.join(REPO_ROOT, 'scripts/install-canvas-system-dependencies.sh')],
-    {
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
-        APT_MIRROR_FILE: mirrorFile,
-        APT_TEST_LOG: aptLog,
-        GITHUB_ACTIONS: 'true',
-      },
-    },
-  );
+  const installer = path.join(REPO_ROOT, 'scripts/install-canvas-system-dependencies.sh');
+  const env = {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    APT_MIRROR_FILE: '',
+    APT_UBUNTU_SOURCES_FILE: sourceFile,
+    APT_TEST_LOG: aptLog,
+    GITHUB_ACTIONS: 'true',
+  };
+
+  await execFileAsync('bash', [installer, '--prepare-mirrors'], { env });
+  await assert.rejects(() => access(aptLog), { code: 'ENOENT' });
+  await writeFile(mirrorFile, originalMirrors);
+  await execFileAsync('bash', [installer], { env });
 
   const mirrors = await readFile(mirrorFile, 'utf8');
   assert.equal(mirrors.includes('azure.archive.ubuntu.com'), false);
-  assert.match(mirrors, /archive\.ubuntu\.com/);
-  assert.match(mirrors, /security\.ubuntu\.com/);
+  assert.doesNotMatch(mirrors, /http:\/\//);
+  assert.match(mirrors, /https:\/\/mirrors\.edge\.kernel\.org/);
+  assert.match(mirrors, /https:\/\/archive\.ubuntu\.com/);
 
   const aptCommands = await readFile(aptLog, 'utf8');
   assert.match(aptCommands, /update/);
