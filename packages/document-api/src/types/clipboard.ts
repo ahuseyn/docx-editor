@@ -280,6 +280,8 @@ export interface SDPasteTableRow {
  */
 export interface SDPasteTableBlock {
   kind: 'table';
+  /** Enclosing complete block content controls, from outermost to innermost. */
+  blockSdts?: readonly SDPasteBlockSdt[];
   /** Direct between-cell spacing in points (not cell padding). */
   cellSpacingPt?: number;
   rows: readonly SDPasteTableRow[];
