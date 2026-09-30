@@ -6,11 +6,21 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { npmDistRoot: distRoot } = require('./build-output-paths.cjs');
+const { auditInternalVue } = require('./audit-internal-vue.cjs');
 const prosemirrorFingerprint = 'ProseMirror expects the CSS white-space property to be set';
 const failures = [];
 
 if (!fs.existsSync(distRoot)) {
   throw new Error('Missing dist directory');
+}
+
+try {
+  auditInternalVue(
+    ['superdoc.es.js', 'superdoc.cjs', 'public/ui.es.js', 'public/ui.cjs'].map((file) => path.join(distRoot, file)),
+    { vueEntries: ['superdoc.es.js', 'superdoc.cjs'].map((file) => path.join(distRoot, file)) },
+  );
+} catch (error) {
+  failures.push(error.message);
 }
 
 for (const file of walkFiles(distRoot)) {

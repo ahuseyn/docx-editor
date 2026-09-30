@@ -157,6 +157,30 @@ export default defineConfig(({ mode, command }) => {
   const skipDts = internalEsOnly || process.env.SUPERDOC_SKIP_DTS === '1';
   const stringDecoderEntry = stdlibRequire.resolve('string_decoder/lib/string_decoder.js');
   const plugins = [
+    // Vite can recover package provenance for optimized entries, but not shared
+    // chunks. Keep external Vue in the bootstrap and opt-in host adapter only.
+    {
+      name: 'superdoc-vue-entry-bindings',
+      enforce: 'pre',
+      resolveId(source) {
+        // Keep the runtime redirect out of resolve.alias: declaration generation
+        // must continue resolving Vue's original public types.
+        if (command === 'build' && v2Resolution.mode === 'package' && source === 'vue') {
+          return path.resolve(__dirname, 'src/core/v2-integration/internal-vue-runtime.js');
+        }
+        return null;
+      },
+      transform(code, id) {
+        if (command !== 'build' || v2Resolution.mode !== 'package') return null;
+        const file = id.split('?')[0];
+        const entries = [
+          path.resolve(__dirname, 'src/public/ui/vue.ts'),
+          path.resolve(__dirname, 'src/core/v2-integration/browser-peer-runtime.js'),
+        ];
+        if (!entries.includes(file)) return null;
+        return { code: code.replace(/from (['"])vue\1/g, "from 'superdoc-entry-vue'"), map: null };
+      },
+    },
     headlessImportGuardPlugin(v2Resolution.mode),
     resolveV2DistRelativeImportsPlugin(engineDistRoot),
     // Rolldown treats trailing-slash imports (`punycode/`, `string_decoder/`) as
@@ -291,13 +315,16 @@ export default defineConfig(({ mode, command }) => {
           // v2-native public UI controller + framework bindings. Emitted as
           // their own bundles so `superdoc/ui`, `superdoc/ui/react`, and
           // `superdoc/ui/vue` resolve without dragging in the app-shell/main
-          // bundle. `react` and `vue` are external.
+          // bundle. Host framework imports remain external in their entries.
           'public/ui': 'src/public/ui.ts',
           'public/ui-react': 'src/public/ui-react.ts',
           'public/ui-vue': 'src/public/ui-vue.ts',
           'public/collaboration-worker': 'src/public/collaboration-worker.ts',
         },
-        external: [
+        external: (id) => {
+          if (id === 'superdoc-entry-vue') return true;
+          if (id === 'vue' && v2Resolution.mode === 'source') return true;
+          return [
           ...(v2Resolution.mode === 'package' ? [/^@superdoc\/docx-engine(?:\/.*)?$/] : []),
           'yjs',
           '@hocuspocus/provider',
@@ -307,7 +334,6 @@ export default defineConfig(({ mode, command }) => {
           'pdfjs-dist/web/pdf_viewer.mjs',
           'react',
           'react/jsx-runtime',
-          'vue',
           // V2 collaboration/runtime peers the host app provides (kept as one
           // shared copy across the page, matching the v2 external-peer policy).
           'y-protocols',
@@ -317,10 +343,12 @@ export default defineConfig(({ mode, command }) => {
           'y-websocket',
           '@liveblocks/client',
           '@liveblocks/yjs',
-        ],
+          ].some((entry) => typeof entry === 'string' ? id === entry : entry.test(id));
+        },
         output: [
           {
             format: 'es',
+            paths: { 'superdoc-entry-vue': 'vue' },
             entryFileNames: '[name].es.js',
             chunkFileNames: 'chunks/[name]-[hash].es.js',
             manualChunks(id) {
@@ -334,6 +362,7 @@ export default defineConfig(({ mode, command }) => {
           },
           ...(!internalEsOnly ? [{
             format: 'cjs',
+            paths: { 'superdoc-entry-vue': 'vue' },
             entryFileNames: '[name].cjs',
             chunkFileNames: 'chunks/[name]-[hash].cjs',
             manualChunks(id) {
