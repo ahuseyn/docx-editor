@@ -563,6 +563,14 @@ import type {
   HeaderFootersPartsCreateInput,
   HeaderFootersPartsDeleteInput,
   HeaderFooterPartsMutationResult,
+  HeaderFootersPageNumbersInsertInput,
+  HeaderFooterPageNumbersInsertResult,
+  HeaderFootersPageNumbersSetInput,
+  HeaderFooterPageNumbersSetResult,
+  HeaderFootersPageNumbersRemoveInput,
+  HeaderFooterPageNumbersRemoveResult,
+  HeaderFootersPageNumbersGetInput,
+  HeaderFooterPageNumbersInfo,
 } from './header-footers/header-footers.js';
 import {
   executeHeaderFootersList,
@@ -574,6 +582,10 @@ import {
   executeHeaderFootersPartsList,
   executeHeaderFootersPartsCreate,
   executeHeaderFootersPartsDelete,
+  executeHeaderFootersPageNumbersGet,
+  executeHeaderFootersPageNumbersInsert,
+  executeHeaderFootersPageNumbersSet,
+  executeHeaderFootersPageNumbersRemove,
 } from './header-footers/header-footers.js';
 import type {
   WatermarksAdapter,
@@ -3357,6 +3369,26 @@ export function createDocumentApi(adapters: DocumentApiAdapters): DocumentApi {
         },
         delete(input: HeaderFootersPartsDeleteInput, options?: MutationOptions): HeaderFooterPartsMutationResult {
           return executeHeaderFootersPartsDelete(adapters.headerFooters, input, options);
+        },
+      },
+      pageNumbers: {
+        get(input: HeaderFootersPageNumbersGetInput): HeaderFooterPageNumbersInfo {
+          return executeHeaderFootersPageNumbersGet(adapters.headerFooters, input);
+        },
+        insert(
+          input: HeaderFootersPageNumbersInsertInput,
+          options?: MutationOptions,
+        ): HeaderFooterPageNumbersInsertResult {
+          return executeHeaderFootersPageNumbersInsert(adapters.headerFooters, input, options);
+        },
+        set(input: HeaderFootersPageNumbersSetInput, options?: MutationOptions): HeaderFooterPageNumbersSetResult {
+          return executeHeaderFootersPageNumbersSet(adapters.headerFooters, input, options);
+        },
+        remove(
+          input: HeaderFootersPageNumbersRemoveInput,
+          options?: MutationOptions,
+        ): HeaderFooterPageNumbersRemoveResult {
+          return executeHeaderFootersPageNumbersRemove(adapters.headerFooters, input, options);
         },
       },
     },

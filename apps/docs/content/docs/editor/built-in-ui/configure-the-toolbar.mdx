@@ -118,3 +118,41 @@ content change.
 Enable the optional Watermark button with `ui.toolbar.includeItems: ['watermark']`. It opens the text and picture
 watermark dialog and uses the toolbar's existing overflow menu in narrow containers. See
 [Configure document watermarks](/editor/built-in-ui/watermarks) for runnable Vanilla and React examples.
+
+## Add page numbers
+
+Enable the optional Page number control with `ui.toolbar.includeItems: ['page-number']`, or place `'page-number'` in `items`.
+It opens a menu for the page numbers of the section under the cursor, from anywhere in the document.
+Pick the top or bottom of the page and an alignment, then choose **Add page numbers**.
+Clear **Show on first page** to keep the number off the section's first page.
+That page keeps the rest of its header and footer.
+**Format** sets the number style, such as `i, ii, iii`, and **Start at** sets the first number of the section.
+Leave **Start at** cleared to continue from the previous section.
+SuperDoc writes a Word `PAGE` field, so each page shows its own number, and one undo removes the change.
+Sections that share a header or footer are numbered together.
+
+Open the menu again to change the numbers.
+It shows their current position and options.
+**Apply** moves or realigns them, and **Remove** deletes them while keeping the rest of the header and footer.
+Text you typed next to a number moves with it when you change its alignment.
+To move such a number between the header and the footer, edit that line directly.
+
+While you edit a header or footer, **Insert at cursor** puts a page number where you are typing.
+Changing page numbers from the menu is unavailable in suggesting mode, because header and footer structure can't be tracked.
+Inserting at the cursor still works there as a tracked change.
+The control uses the toolbar's overflow menu in narrow containers.
+
+Custom items can run the same actions.
+`command: 'page-numbers-apply'` adds or changes the numbers, `command: 'page-numbers-remove'` removes them, and `command: 'page-number-insert'` inserts at the header or footer cursor.
+To choose the placement from code, pass it to the UI controller.
+Options you leave out keep the section's current settings:
+
+```js
+await superdoc.ui.commands.executeAsync('page-numbers-apply', {
+  position: 'top',
+  alignment: 'center',
+  showOnFirstPage: false,
+  format: 'lowerRoman',
+  start: 1,
+});
+```

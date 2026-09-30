@@ -74,6 +74,9 @@ export function createElementBlock(...args) {
 export function createElementVNode(...args) {
   return runtime().createElementVNode(...args);
 }
+export function createStaticVNode(...args) {
+  return runtime().createStaticVNode(...args);
+}
 export function createTextVNode(...args) {
   return runtime().createTextVNode(...args);
 }
@@ -188,6 +191,8 @@ export function useAttrs(...args) {
 export function useSlots(...args) {
   return runtime().useSlots(...args);
 }
+export const vModelCheckbox = component('vModelCheckbox');
+export const vModelSelect = component('vModelSelect');
 export const vModelText = component('vModelText');
 export function watch(...args) {
   return runtime().watch(...args);

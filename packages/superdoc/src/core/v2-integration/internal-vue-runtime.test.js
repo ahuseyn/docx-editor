@@ -33,6 +33,42 @@ describe('packaged internal Vue selection', () => {
     expect(globalThis[key].peer).toBe(peer);
   });
 
+  it('binds checkbox and select v-model and renders static markup through the installed runtime', async () => {
+    globalThis[key] = { vue: Vue };
+    const runtime = await import('./internal-vue-runtime.js');
+    const checked = Vue.ref(false);
+    const format = Vue.ref('decimal');
+    const container = document.createElement('div');
+    const app = Vue.createApp({
+      render: () => [
+        runtime.createStaticVNode('<b>static</b>', 1),
+        Vue.withDirectives(
+          Vue.h('input', { type: 'checkbox', 'onUpdate:modelValue': (value) => (checked.value = value) }),
+          [[runtime.vModelCheckbox, checked.value]],
+        ),
+        Vue.withDirectives(
+          Vue.h('select', { 'onUpdate:modelValue': (value) => (format.value = value) }, [
+            Vue.h('option', { value: 'decimal' }, '1, 2, 3'),
+            Vue.h('option', { value: 'lowerRoman' }, 'i, ii, iii'),
+          ]),
+          [[runtime.vModelSelect, format.value]],
+        ),
+      ],
+    });
+    app.mount(container);
+    expect(container.querySelector('b')?.textContent).toBe('static');
+    const checkbox = container.querySelector('input');
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    const select = container.querySelector('select');
+    select.value = 'lowerRoman';
+    select.dispatchEvent(new Event('change'));
+    await Vue.nextTick();
+    expect(checked.value).toBe(true);
+    expect(format.value).toBe('lowerRoman');
+    app.unmount();
+  });
+
   it('renders Transition with native slots and metadata for empty and populated children', async () => {
     globalThis[key] = { vue: Vue };
     const runtime = await import('./internal-vue-runtime.js');

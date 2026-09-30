@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test';
 import { nextTick } from 'vue';
 import { BuiltInToolbar } from './built-in-toolbar.js';
 import { useToolbarItem } from './built-in/use-toolbar-item.js';
-import { createSuperDocUI } from '../../public/ui/create-super-doc-ui.js';
+import { createSuperDocUI, registerFirstPartyCommandMutation } from '../../public/ui/create-super-doc-ui.js';
 import type { SuperDocLike, SuperDocUI } from '../../public/ui/types.js';
 import { normalizeUiConfig } from '../../core/config/normalize-ui-config.js';
 
@@ -116,6 +116,15 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
+/** Wait for an element that an opened toolbar menu renders; menus mount asynchronously. */
+async function waitForElement<T extends Element>(find: () => T | null | undefined): Promise<T> {
+  return vi.waitFor(() => {
+    const element = find();
+    expect(element).toBeTruthy();
+    return element!;
+  });
+}
+
 describe('BuiltInToolbar', () => {
   it('leaves Watermark out of the default toolbar and includes it when requested', () => {
     const host = makeHost();
@@ -198,6 +207,291 @@ describe('BuiltInToolbar', () => {
     const excludedToolbar = new BuiltInToolbar({ superdoc: host, ...excluded.options });
     expect(excludedToolbar.getToolbarItemByName('watermark')).toBeUndefined();
     excludedToolbar.destroy();
+  });
+
+  describe('Page number', () => {
+    const FOOTER = { kind: 'story', storyType: 'headerFooterPart', refId: 'rId7' };
+    const ADDED = {
+      success: true,
+      section: { kind: 'section', sectionId: 'section-0' },
+      kind: 'footer',
+      parts: [{ kind: 'headerFooterPart', refId: 'rId7' }],
+      titlePage: false,
+    };
+    const FOOTER_NUMBERS = {
+      section: { kind: 'section', sectionId: 'section-0' },
+      placements: [{ kind: 'footer', alignment: 'center', parts: [{ kind: 'headerFooterPart', refId: 'rId7' }] }],
+      showOnFirstPage: true,
+      titlePage: false,
+      format: 'decimal',
+      start: null,
+    };
+    const itemNames = (toolbar: BuiltInToolbar) =>
+      [...toolbar.toolbarItems, ...toolbar.overflowItems].map((item) => item.name.value);
+
+    function makePageNumberHost(
+      story: Record<string, unknown> | null,
+      documentMode = 'editing',
+      current: Record<string, unknown> | null = null,
+    ) {
+      const insertAtSelection = vi.fn(async (..._args: unknown[]) => ({
+        success: true,
+        field: { kind: 'field', blockId: 'F1' },
+      }));
+      const codeInsertAtSelection = vi.fn(async (..._args: unknown[]) => ({
+        success: true,
+        field: { kind: 'field', blockId: 'F1' },
+      }));
+      const addPageNumbers = vi.fn(async (..._args: unknown[]): Promise<unknown> => ADDED);
+      const codeAddPageNumbers = vi.fn(async (..._args: unknown[]): Promise<unknown> => ADDED);
+      const removePageNumbers = vi.fn(async (..._args: unknown[]): Promise<unknown> => ({ success: true, parts: [] }));
+      const readPageNumbers = vi.fn(async () => current);
+      const v2Host = {
+        getHandles: () => ({
+          editing: {
+            fields: { insertAtSelection },
+            pageNumbers: { set: addPageNumbers, remove: removePageNumbers, get: vi.fn() },
+          },
+        }),
+        getCodeFieldEditingCommands: () => ({ insertAtSelection: codeInsertAtSelection }),
+        getCodePageNumberEditingCommands: () => ({ set: codeAddPageNumbers, remove: vi.fn(), get: readPageNumbers }),
+      };
+      const withStory = story ? { story } : {};
+      const doc = {
+        comments: { list: () => ({ items: [] }) },
+        trackChanges: { list: () => ({ items: [] }) },
+        fields: { insert: vi.fn() },
+        headerFooters: { pageNumbers: { set: vi.fn(), remove: vi.fn(), get: vi.fn() } },
+        selection: {
+          current: () => ({
+            empty: true,
+            target: { kind: 'text', segments: [{ blockId: 'F1', range: { start: 0, end: 0 } }], ...withStory },
+            selectionTarget: null,
+            activeMarks: [],
+            activeCommentIds: [],
+            activeChangeIds: [],
+            text: '',
+          }),
+        },
+      };
+      const host = makeHost({
+        activeEditor: { id: 'editor-1', editorVersion: 2, host: v2Host, doc },
+        config: { documentMode },
+      });
+      registerFirstPartyCommandMutation(host, v2Host, {
+        supports: () => false,
+        run: vi.fn(),
+        runListApply: async () => false,
+      });
+      return {
+        host,
+        insertAtSelection,
+        codeInsertAtSelection,
+        addPageNumbers,
+        codeAddPageNumbers,
+        removePageNumbers,
+        readPageNumbers,
+      };
+    }
+
+    async function openPageNumberMenu(host: ReturnType<typeof makeHost>) {
+      const toolbarContainer = document.createElement('div');
+      document.body.append(toolbarContainer);
+      const normalized = normalizeUiConfig({
+        ui: { toolbar: { items: { center: ['page-number'] }, includeItems: ['page-number'], overflow: 'visible' } },
+      }).toolbar;
+      const toolbar = new BuiltInToolbar({ superdoc: host, selector: toolbarContainer, ...normalized.options });
+      const item = toolbar.getToolbarItemByName('pageNumber')!;
+      await vi.waitFor(() => expect(item.disabled.value).toBe(false));
+      await nextTick();
+      toolbarContainer.querySelector<HTMLElement>('[aria-label="Page number"]')!.click();
+      const menu = await waitForElement(() => document.querySelector<HTMLElement>('[data-sd-page-number-menu]'));
+      return { toolbar, item, menu };
+    }
+
+    const addButton = (menu: HTMLElement) => menu.querySelector<HTMLButtonElement>('[data-sd-page-number-add]')!;
+    const atCursorButton = (menu: HTMLElement) =>
+      menu.querySelector<HTMLButtonElement>('[data-sd-page-number-at-cursor]')!;
+
+    it('stays out of the default toolbar and its overflow', () => {
+      const host = makeHost();
+      const toolbarContainer = document.createElement('div');
+      Object.defineProperty(toolbarContainer, 'offsetWidth', { configurable: true, value: 50 });
+      document.body.append(toolbarContainer);
+      const normalized = normalizeUiConfig({ ui: { toolbar: { responsiveTo: 'container' } } }).toolbar;
+      const toolbar = new BuiltInToolbar({ superdoc: host, selector: toolbarContainer, ...normalized.options });
+      expect(itemNames(toolbar)).not.toContain('pageNumber');
+      toolbar.destroy();
+    });
+
+    it('adds exactly one control through includeItems without changing the default items', () => {
+      const host = makeHost();
+      const defaultToolbar = new BuiltInToolbar({ superdoc: host });
+      const normalized = normalizeUiConfig({ ui: { toolbar: { includeItems: ['page-number'] } } }).toolbar;
+      const toolbar = new BuiltInToolbar({ superdoc: host, ...normalized.options });
+      const names = itemNames(toolbar);
+      expect(names.filter((name) => name === 'pageNumber')).toHaveLength(1);
+      expect(names.filter((name) => name !== 'pageNumber')).toEqual(itemNames(defaultToolbar));
+      defaultToolbar.destroy();
+      toolbar.destroy();
+    });
+
+    it('renders at the explicit items placement with its label and tooltip', async () => {
+      const toolbarContainer = document.createElement('div');
+      document.body.append(toolbarContainer);
+      const normalized = normalizeUiConfig({
+        ui: {
+          toolbar: { items: { center: ['bold', 'page-number'] }, includeItems: ['page-number'], overflow: 'visible' },
+        },
+      }).toolbar;
+      const toolbar = new BuiltInToolbar({ superdoc: makeHost(), selector: toolbarContainer, ...normalized.options });
+      await nextTick();
+      expect(toolbar.toolbarItems.map((item) => item.name.value)).toEqual(['bold', 'pageNumber']);
+      expect(toolbarContainer.querySelector('[aria-label="Page number"]')).not.toBeNull();
+      expect(toolbar.getToolbarItemByName('pageNumber')?.tooltip.value).toBe('Page number');
+      toolbar.destroy();
+    });
+
+    it('moves into ordinary overflow at narrow widths and honors explicit exclusion', () => {
+      const host = makeHost();
+      const toolbarContainer = document.createElement('div');
+      Object.defineProperty(toolbarContainer, 'offsetWidth', { configurable: true, value: 50 });
+      document.body.append(toolbarContainer);
+      const normalized = normalizeUiConfig({
+        ui: { toolbar: { includeItems: ['page-number'], responsiveTo: 'container' } },
+      }).toolbar;
+      const toolbar = new BuiltInToolbar({ superdoc: host, selector: toolbarContainer, ...normalized.options });
+      expect(toolbar.overflowItems.map((item) => item.name.value)).toContain('pageNumber');
+      toolbar.destroy();
+      const excluded = normalizeUiConfig({
+        ui: { toolbar: { includeItems: ['page-number'], excludeItems: ['page-number'] } },
+      }).toolbar;
+      const excludedToolbar = new BuiltInToolbar({ superdoc: host, ...excluded.options });
+      expect(excludedToolbar.getToolbarItemByName('pageNumber')).toBeUndefined();
+      excludedToolbar.destroy();
+    });
+
+    it('opens from the body with numbering available and insert at cursor unavailable', async () => {
+      const { host, insertAtSelection } = makePageNumberHost(null);
+      const { toolbar, menu } = await openPageNumberMenu(host);
+
+      expect(addButton(menu).disabled).toBe(false);
+      expect(atCursorButton(menu).disabled).toBe(true);
+      expect(menu.textContent).toContain('Click into a header or footer first');
+      atCursorButton(menu).click();
+      expect(insertAtSelection).not.toHaveBeenCalled();
+      toolbar.destroy();
+    });
+
+    it('adds page numbers at the chosen position through the human-attributed command', async () => {
+      const { host, addPageNumbers, codeAddPageNumbers } = makePageNumberHost(null);
+      const { toolbar, item, menu } = await openPageNumberMenu(host);
+
+      menu.querySelector<HTMLElement>('[data-position="top"][data-alignment="center"]')!.click();
+      menu.querySelector<HTMLInputElement>('[data-sd-page-number-first-page]')!.click();
+      addButton(menu).click();
+
+      await vi.waitFor(() =>
+        expect(addPageNumbers).toHaveBeenCalledWith({ kind: 'header', alignment: 'center', showOnFirstPage: false }),
+      );
+      expect(codeAddPageNumbers).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(item.expand.value).toBe(false));
+      toolbar.destroy();
+    });
+
+    it('shows the section numbers and moves them, keeping the popover open when the move is refused', async () => {
+      const { host, addPageNumbers, readPageNumbers } = makePageNumberHost(null, 'editing', FOOTER_NUMBERS);
+      addPageNumbers.mockResolvedValueOnce({
+        success: false,
+        failure: {
+          code: 'PRECONDITION_FAILED',
+          message: 'shares its line',
+          details: { reason: 'page-number-has-content', kind: 'footer' },
+        },
+      });
+      const { toolbar, item, menu } = await openPageNumberMenu(host);
+
+      await vi.waitFor(() => expect(addButton(menu).textContent?.trim()).toBe('Apply'));
+      expect(readPageNumbers).toHaveBeenCalled();
+      expect(menu.querySelector('[aria-checked="true"]')?.getAttribute('aria-label')).toBe('Bottom of page, center');
+      menu.querySelector<HTMLElement>('[data-position="top"][data-alignment="center"]')!.click();
+      addButton(menu).click();
+
+      await vi.waitFor(() => expect(addPageNumbers).toHaveBeenCalledWith({ kind: 'header', alignment: 'center' }));
+      await vi.waitFor(() => expect(menu.textContent).toContain('Edit the footer directly to change it.'));
+      expect(item.expand.value).toBe(true);
+      toolbar.destroy();
+    });
+
+    it('removes the section numbers from the popover', async () => {
+      const { host, removePageNumbers } = makePageNumberHost(null, 'editing', FOOTER_NUMBERS);
+      const { toolbar, item, menu } = await openPageNumberMenu(host);
+
+      await vi.waitFor(() => expect(menu.querySelector('[data-sd-page-number-remove]')).not.toBeNull());
+      menu.querySelector<HTMLButtonElement>('[data-sd-page-number-remove]')!.click();
+
+      await vi.waitFor(() => expect(removePageNumbers).toHaveBeenCalledWith({}));
+      await vi.waitFor(() => expect(item.expand.value).toBe(false));
+      toolbar.destroy();
+    });
+
+    it('inserts at the footer cursor from the popover', async () => {
+      const { host, insertAtSelection, addPageNumbers } = makePageNumberHost(FOOTER);
+      const { toolbar, item, menu } = await openPageNumberMenu(host);
+
+      expect(atCursorButton(menu).disabled).toBe(false);
+      atCursorButton(menu).click();
+
+      await vi.waitFor(() => expect(insertAtSelection).toHaveBeenCalledWith({ instruction: 'PAGE' }));
+      expect(addPageNumbers).not.toHaveBeenCalled();
+      await vi.waitFor(() => expect(item.expand.value).toBe(false));
+      toolbar.destroy();
+    });
+
+    it('offers a tracked insert at the cursor but not numbering while suggesting', async () => {
+      const { host, insertAtSelection, addPageNumbers } = makePageNumberHost(FOOTER, 'suggesting');
+      const { toolbar, menu } = await openPageNumberMenu(host);
+
+      expect(addButton(menu).disabled).toBe(true);
+      expect(menu.textContent).toContain('Switch to Editing');
+      addButton(menu).click();
+      atCursorButton(menu).click();
+
+      await vi.waitFor(() =>
+        expect(insertAtSelection).toHaveBeenCalledWith({ instruction: 'PAGE' }, { changeMode: 'tracked' }),
+      );
+      expect(addPageNumbers).not.toHaveBeenCalled();
+      toolbar.destroy();
+    });
+
+    it('lets custom items run both commands as application code', async () => {
+      const { host, insertAtSelection, codeInsertAtSelection, addPageNumbers, codeAddPageNumbers } =
+        makePageNumberHost(FOOTER);
+      const normalized = normalizeUiConfig({
+        ui: {
+          toolbar: {
+            customItems: [
+              { type: 'button', id: 'app-page-number', label: 'Page #', command: 'page-number-insert' },
+              { type: 'button', id: 'app-page-numbers', label: 'Number pages', command: 'page-numbers-apply' },
+            ],
+          },
+        },
+      }).toolbar;
+      const toolbar = new BuiltInToolbar({ superdoc: host, ...normalized.options });
+      const atCursor = toolbar.getToolbarItemByName('app-page-number');
+      const numberPages = toolbar.getToolbarItemByName('app-page-numbers');
+      await vi.waitFor(() => expect(atCursor?.disabled.value).toBe(false));
+      await vi.waitFor(() => expect(numberPages?.disabled.value).toBe(false));
+
+      toolbar.emitCommand({ item: atCursor });
+      toolbar.emitCommand({ item: numberPages });
+
+      await vi.waitFor(() => expect(codeInsertAtSelection).toHaveBeenCalledWith({ instruction: 'PAGE' }));
+      await vi.waitFor(() => expect(codeAddPageNumbers).toHaveBeenCalledWith({ kind: 'footer' }));
+      expect(insertAtSelection).not.toHaveBeenCalled();
+      expect(addPageNumbers).not.toHaveBeenCalled();
+      toolbar.destroy();
+    });
   });
 
   it('treats a groups array as group ordering instead of button composition', async () => {
@@ -457,24 +751,23 @@ describe('BuiltInToolbar', () => {
       return { ok: true, success: true };
     });
 
-    toolbarContainer.querySelector<HTMLElement>('[aria-label="Overflow items"]')?.click();
-    await nextTick();
-    const status = document.querySelector<HTMLElement>('[data-item="btn-status"]');
-    expect(status).toBeTruthy();
-    status?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-    status?.click();
-    await nextTick();
-    await nextTick();
-    const option = [...document.querySelectorAll<HTMLElement>('.toolbar-dropdown-option')].find((element) =>
-      element.textContent?.includes('Draft'),
+    const overflow = await waitForElement(() =>
+      toolbarContainer.querySelector<HTMLElement>('[aria-label="Overflow items"]'),
     );
-    expect(option).toBeTruthy();
-    expect(toolbarContainer.contains(option ?? null)).toBe(false);
+    overflow.click();
+    const status = await waitForElement(() => document.querySelector<HTMLElement>('[data-item="btn-status"]'));
+    status.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    status.click();
+    const option = await waitForElement(() =>
+      [...document.querySelectorAll<HTMLElement>('.toolbar-dropdown-option')].find((candidate) =>
+        candidate.textContent?.includes('Draft'),
+      ),
+    );
+    expect(toolbarContainer.contains(option)).toBe(false);
 
-    option?.click();
-    await nextTick();
+    option.click();
 
-    expect(calls).toEqual(['restore', 'select']);
+    await vi.waitFor(() => expect(calls).toEqual(['restore', 'select']));
     toolbar.destroy();
   });
 
@@ -928,15 +1221,17 @@ describe('BuiltInToolbar', () => {
     const trigger = toolbarContainer.querySelector<HTMLElement>('[aria-label="Document mode"]');
     expect(trigger).not.toBeNull();
     trigger?.click();
-    await nextTick();
-    await nextTick();
 
-    const options = [...document.querySelectorAll<HTMLElement>('[data-item="btn-documentMode-option"]')];
-    const suggestingOption = options.find((option) => option.textContent?.includes('Suggesting'));
-    expect(options[0]).toBe(document.activeElement);
-    expect(suggestingOption).toBeDefined();
+    const suggestingOption = await waitForElement(() =>
+      [...document.querySelectorAll<HTMLElement>('[data-item="btn-documentMode-option"]')].find((option) =>
+        option.textContent?.includes('Suggesting'),
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(document.querySelector('[data-item="btn-documentMode-option"]')).toBe(document.activeElement),
+    );
 
-    suggestingOption?.click();
+    suggestingOption.click();
     await nextTick();
     await Promise.resolve();
 
@@ -965,13 +1260,10 @@ describe('BuiltInToolbar', () => {
     const trigger = toolbarContainer.querySelector<HTMLElement>('[aria-label="Text align"]');
     expect(trigger).not.toBeNull();
     trigger?.click();
-    await nextTick();
-    await nextTick();
-    const centerOption = document.querySelector<HTMLElement>('[aria-label="Align center"]');
-    expect(centerOption).not.toBeNull();
+    const centerOption = await waitForElement(() => document.querySelector<HTMLElement>('[aria-label="Align center"]'));
     expect(document.activeElement).not.toBe(editorSurface);
 
-    centerOption?.click();
+    centerOption.click();
     await nextTick();
 
     await vi.waitFor(() =>
@@ -1003,15 +1295,14 @@ describe('BuiltInToolbar', () => {
     const trigger = toolbarContainer.querySelector<HTMLElement>('[aria-label="Line height"]');
     expect(trigger).not.toBeNull();
     trigger?.click();
-    await nextTick();
-    await nextTick();
-    const option = [...document.querySelectorAll<HTMLElement>('[data-item="btn-lineHeight-option"]')].find((element) =>
-      element.textContent?.includes('1.15'),
+    const option = await waitForElement(() =>
+      [...document.querySelectorAll<HTMLElement>('[data-item="btn-lineHeight-option"]')].find((element) =>
+        element.textContent?.includes('1.15'),
+      ),
     );
-    expect(option).toBeDefined();
     expect(document.activeElement).not.toBe(editorSurface);
 
-    option?.click();
+    option.click();
     await nextTick();
 
     await vi.waitFor(() =>

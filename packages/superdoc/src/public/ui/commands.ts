@@ -167,6 +167,46 @@ export interface CreateCommandSpec {
 }
 
 /**
+ * How a field command routes through `fields.insert`. The field lands at the
+ * collapsed caret of the active header or footer story. The target keeps the
+ * part the caret is editing, the same scope typing uses, so a section that
+ * shares its header or footer with the previous section stays linked. Without
+ * such a caret the command fails closed with `context-unavailable`.
+ */
+export interface FieldCommandSpec {
+  /** Field instruction written as the native field code, e.g. `PAGE`. */
+  instruction: string;
+}
+
+/** Number style of a section's pages, as Word's Format Page Numbers names them. */
+export type PageNumberFormat =
+  | 'decimal'
+  | 'lowerLetter'
+  | 'upperLetter'
+  | 'lowerRoman'
+  | 'upperRoman'
+  | 'numberInDash'
+  | 'hebrew1'
+  | 'hebrew2';
+
+/** Normalized input of the page-numbers-apply command. Omitted options keep the section's settings. */
+export interface PageNumbersApplyCommandInput {
+  /** 'header' numbers the top of the page, 'footer' the bottom. */
+  kind: 'header' | 'footer';
+  alignment?: 'left' | 'center' | 'right';
+  showOnFirstPage?: boolean;
+  format?: PageNumberFormat;
+  /** First page number of the section, or null to continue from the previous section. */
+  start?: number | null;
+}
+
+/** Normalized input of the page-numbers-remove command. */
+export interface PageNumbersRemoveCommandInput {
+  /** Remove only the header's or the footer's numbers. Omitted removes both. */
+  kind?: 'header' | 'footer';
+}
+
+/**
  * How a table cell-context command routes through a `tables.*` operation once
  * the current table context is resolved.
  *
@@ -245,6 +285,14 @@ export interface CommandDescriptor {
   link?: LinkCommandSpec;
   /** Create routing spec (`create.table` / `create.image` / `create.tableOfContents`). */
   create?: CreateCommandSpec;
+  /** Header/footer field routing spec (`fields.insert` at the active caret). */
+  field?: FieldCommandSpec;
+  /**
+   * Page numbering for the section under the caret, from anywhere in the
+   * document (`headerFooters.pageNumbers.set` or `.remove`). Unavailable while
+   * suggesting, because header/footer structure has no tracked-change form.
+   */
+  pageNumbers?: 'set' | 'remove';
   /** Table cell-context routing spec (`tables.*` against the live table context). */
   table?: TableCommandSpec;
   /** Controller state slice the command's `value` is read from. */
@@ -369,6 +417,72 @@ export function normalizeAlignmentPayload(payload: unknown): unknown {
  * line: 240 = single, 360 = 1.5×, 480 = double). A multiplier in the `0..10`
  * range is converted (`1.5` → `360`); a larger raw value passes through.
  */
+const PAGE_NUMBER_ALIGNMENTS = new Set(['left', 'center', 'right']);
+const PAGE_NUMBER_FORMATS = new Set<string>([
+  'decimal',
+  'lowerLetter',
+  'upperLetter',
+  'lowerRoman',
+  'upperRoman',
+  'numberInDash',
+  'hebrew1',
+  'hebrew2',
+]);
+
+function readPageNumberKind(input: Record<string, unknown>): 'header' | 'footer' | null | undefined {
+  if (input.kind !== undefined && input.kind !== 'header' && input.kind !== 'footer') return null;
+  const position = input.position ?? (input.kind === 'header' ? 'top' : input.kind === 'footer' ? 'bottom' : undefined);
+  if (position === undefined) return undefined;
+  if (position !== 'top' && position !== 'bottom') return null;
+  return position === 'top' ? 'header' : 'footer';
+}
+
+function readPageNumbersRecord(payload: unknown): Record<string, unknown> | null {
+  if (payload !== undefined && payload !== null && typeof payload !== 'object') return null;
+  return (payload ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * Normalize a page-numbers-apply payload. `position` takes 'top' or 'bottom';
+ * `kind` takes 'header' or 'footer'; without either the numbers go at the bottom
+ * of the page, as in Word. Other omitted options keep the section's settings.
+ * Returns null for a value it does not recognize, so the command fails closed.
+ */
+export function normalizePageNumbersApplyPayload(payload: unknown): PageNumbersApplyCommandInput | null {
+  const input = readPageNumbersRecord(payload);
+  if (!input) return null;
+  const kind = readPageNumberKind(input);
+  if (kind === null) return null;
+  if (input.alignment !== undefined && !PAGE_NUMBER_ALIGNMENTS.has(input.alignment as string)) return null;
+  if (input.showOnFirstPage !== undefined && typeof input.showOnFirstPage !== 'boolean') return null;
+  if (input.format !== undefined && !PAGE_NUMBER_FORMATS.has(input.format as string)) return null;
+  if (
+    input.start !== undefined &&
+    input.start !== null &&
+    (typeof input.start !== 'number' || !Number.isInteger(input.start) || input.start < 0)
+  ) {
+    return null;
+  }
+  return {
+    kind: kind ?? 'footer',
+    ...(input.alignment !== undefined
+      ? { alignment: input.alignment as PageNumbersApplyCommandInput['alignment'] }
+      : {}),
+    ...(input.showOnFirstPage !== undefined ? { showOnFirstPage: input.showOnFirstPage as boolean } : {}),
+    ...(input.format !== undefined ? { format: input.format as PageNumberFormat } : {}),
+    ...(input.start !== undefined ? { start: input.start as number | null } : {}),
+  };
+}
+
+/** Normalize a page-numbers-remove payload: an optional `position` or `kind`. */
+export function normalizePageNumbersRemovePayload(payload: unknown): PageNumbersRemoveCommandInput | null {
+  const input = readPageNumbersRecord(payload);
+  if (!input) return null;
+  const kind = readPageNumberKind(input);
+  if (kind === null) return null;
+  return kind ? { kind } : {};
+}
+
 export function normalizeLineHeightPayload(payload: unknown): unknown {
   const raw = unwrapScalar(payload, ['line', 'lineHeight', 'value']);
   const num = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number.parseFloat(raw.trim()) : NaN;
@@ -730,6 +844,35 @@ export const COMMAND_CATALOG = [
     mutates: true,
     docRoute: 'create.table',
     create: { kind: 'table' },
+  },
+
+  // --- header/footer fields (routed: fields.insert at the active caret) ----
+  {
+    id: 'page-number-insert',
+    family: 'fields',
+    disposition: 'routed',
+    mutates: true,
+    docRoute: 'fields.insert',
+    field: { instruction: 'PAGE' },
+  },
+  // --- page numbering (routed: headerFooters.pageNumbers.* for the caret's section)
+  {
+    id: 'page-numbers-apply',
+    family: 'fields',
+    disposition: 'routed',
+    mutates: true,
+    docRoute: 'headerFooters.pageNumbers.set',
+    pageNumbers: 'set',
+    normalizePayload: normalizePageNumbersApplyPayload,
+  },
+  {
+    id: 'page-numbers-remove',
+    family: 'fields',
+    disposition: 'routed',
+    mutates: true,
+    docRoute: 'headerFooters.pageNumbers.remove',
+    pageNumbers: 'remove',
+    normalizePayload: normalizePageNumbersRemovePayload,
   },
 
   // --- table cell-context operations: routed via the shared table-context

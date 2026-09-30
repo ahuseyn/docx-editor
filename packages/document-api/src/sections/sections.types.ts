@@ -245,7 +245,8 @@ export interface SectionsSetLineNumberingInput extends SectionTargetInput {
 }
 
 export interface SectionsSetPageNumberingInput extends SectionTargetInput {
-  start?: number;
+  /** First page number of the section, or null to continue from the previous section. */
+  start?: number | null;
   format?: SectionPageNumberingFormat;
   chapterStyle?: number;
   chapterSeparator?: SectionPageNumberingChapterSeparator;

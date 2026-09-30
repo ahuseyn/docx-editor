@@ -29,6 +29,36 @@ describe('normalizeUiConfig', () => {
     ).toBe(true);
     expect(normalizeUiConfig({ ui: { toolbar: true } }).toolbar.options.showWatermarkButton).toBe(false);
   });
+  it('normalizes opt-in Page number composition, icon and text overrides', () => {
+    const options = normalizeUiConfig({
+      ui: {
+        toolbar: {
+          items: { right: ['page-number'] },
+          icons: { 'page-number': '<svg />' },
+          strings: { 'page-number': 'Insert page number' },
+        },
+      },
+    }).toolbar.options;
+    expect(options.showPageNumberButton).toBe(true);
+    expect(options.groups).toEqual({ right: ['pageNumber'] });
+    expect(options.icons.pageNumber).toBe('<svg />');
+    expect(options.texts.pageNumber).toBe('Insert page number');
+    const included = normalizeUiConfig({ ui: { toolbar: { includeItems: ['page-number'] } } }).toolbar.options;
+    expect(included.showPageNumberButton).toBe(true);
+    expect(normalizeUiConfig({ ui: { toolbar: true } }).toolbar.options.showPageNumberButton).toBe(false);
+    expect(
+      normalizeUiConfig({ ui: { toolbar: { includeItems: ['page-number'], excludeItems: ['page-number'] } } }).toolbar
+        .options.excludeItems,
+    ).toEqual(['pageNumber']);
+  });
+
+  it('places an included Page number in the center region of an explicit composition', () => {
+    const options = normalizeUiConfig({
+      ui: { toolbar: { items: { center: ['bold'] }, includeItems: ['page-number'] } },
+    }).toolbar.options;
+    expect(options.groups).toEqual({ center: ['bold', 'pageNumber'] });
+  });
+
   describe('omitted ui preserves the historical profile', () => {
     it('renders comments, the context menu, and content-control chrome', () => {
       const ui = normalizeUiConfig({});

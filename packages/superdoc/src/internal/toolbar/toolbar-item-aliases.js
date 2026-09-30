@@ -6,6 +6,7 @@ export const TOOLBAR_ITEM_ALIASES = Object.freeze({
   'highlight-color': 'highlight',
   'text-color': 'color',
   'table-of-contents': 'tableOfContents',
+  'page-number': 'pageNumber',
   'table-actions': 'tableActions',
   'text-align': 'textAlign',
   'bullet-list': 'list',

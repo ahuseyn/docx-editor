@@ -62,6 +62,7 @@ import strikethroughSvg from '@superdoc/common/icons/strikethrough.svg?raw';
 import paragraphIconSvg from '@superdoc/common/icons/paragraph-solid.svg?raw';
 import tocIconSvg from '@superdoc/common/icons/toc-solid.svg?raw';
 import watermarkIconSvg from '@superdoc/common/icons/watermark.svg?raw';
+import pageNumberIconSvg from '@superdoc/common/icons/page-number.svg?raw';
 import paragraphLtrIconSvg from '@superdoc/common/icons/paragraph-ltr-solid.svg?raw';
 import paragraphRtlIconSvg from '@superdoc/common/icons/paragraph-rtl-solid.svg?raw';
 
@@ -76,6 +77,7 @@ export const toolbarIcons = {
   image: imageIconSvg,
   tableOfContents: tocIconSvg,
   watermark: watermarkIconSvg,
+  pageNumber: pageNumberIconSvg,
   alignLeft: alignLeftIconSvg,
   alignRight: alignRightIconSvg,
   alignCenter: alignCenterIconSvg,

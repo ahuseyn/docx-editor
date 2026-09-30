@@ -197,6 +197,7 @@ function normalizeSearchOptions(options) {
 const TOOLBAR_ICON_ALIASES = Object.freeze({
   'text-color': 'color',
   'table-of-contents': 'tableOfContents',
+  'page-number': 'pageNumber',
   'align-left': 'alignLeft',
   'align-right': 'alignRight',
   'align-center': 'alignCenter',
@@ -237,6 +238,7 @@ const TOOLBAR_STRING_ALIASES = Object.freeze({
   'highlight-color': 'highlight',
   'text-color': 'color',
   'table-of-contents': 'tableOfContents',
+  'page-number': 'pageNumber',
   'table-actions': 'tableActions',
   'insert-row-before': 'addRowBefore',
   'insert-row-after': 'addRowAfter',
@@ -308,6 +310,7 @@ function addCustomItemRegions(regions, customItems) {
 
 const TOOLBAR_OPTIONAL_ITEM_REGIONS = Object.freeze({
   watermark: 'center',
+  'page-number': 'center',
   'formatting-marks': 'right',
   'table-of-contents': 'center',
 });
@@ -454,6 +457,7 @@ function normalizeToolbarOptions(options) {
         ? options.showTableOfContentsButton
         : itemIds.has('table-of-contents') || includeItems?.has('table-of-contents'),
     showWatermarkButton: itemIds.has('watermark') || includeItems?.has('watermark') || false,
+    showPageNumberButton: itemIds.has('page-number') || includeItems?.has('page-number') || false,
   });
 }
 

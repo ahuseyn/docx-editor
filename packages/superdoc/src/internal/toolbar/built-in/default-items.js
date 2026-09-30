@@ -14,7 +14,10 @@ import { renderColorOptions } from './color-dropdown-helpers.js';
 import { refocusEditorSurface } from './toolbar-focus-helpers.js';
 import TableGrid from './TableGrid.vue';
 import TableActions from './TableActions.vue';
+import PageNumberMenu from './PageNumberMenu.vue';
+import { flashPageNumberRegions } from './page-number-feedback.js';
 import { scrollToElement } from './scroll-helpers.js';
+import { executeFirstPartyCommandAsync, readFirstPartyPageNumbers } from '../../../public/ui/create-super-doc-ui.js';
 
 import checkIconSvg from '@superdoc/common/icons/check.svg?raw';
 import { RESPONSIVE_BREAKPOINTS, TOOLBAR_FONTS, TOOLBAR_FONT_SIZES } from './constants.js';
@@ -526,6 +529,66 @@ export const makeDefaultItems = ({
     disabled: true,
     attributes: { ariaLabel: toolbarTexts.watermark },
   });
+
+  const pageNumber = useToolbarItem({
+    type: 'dropdown',
+    name: 'pageNumber',
+    icon: toolbarIcons.pageNumber,
+    hideLabel: true,
+    tooltip: toolbarTexts.pageNumber,
+    disabled: true,
+    suppressActiveHighlight: true,
+    attributes: { ariaLabel: toolbarTexts.pageNumber },
+    options: [
+      {
+        key: 'pageNumber',
+        type: 'render',
+        label: 'Page number options',
+        render: () => renderPageNumberMenu(pageNumber),
+      },
+    ],
+  });
+
+  // The choice survives closing the popover, so adding numbers again starts
+  // from the last position the user picked.
+  let lastPageNumberChoice = null;
+
+  function renderPageNumberMenu(item) {
+    const ui = superToolbar.ui;
+    const commandState = (id) => ui?.commands?.get?.(id)?.getState?.() ?? null;
+    const finish = () => {
+      closeDropdown(item);
+      // A completed action from the overflow menu also closes that menu.
+      if (overflow.expand.value) closeDropdown(overflow);
+      refocusEditorSurface(superToolbar);
+    };
+
+    const selection = currentSelectionSnapshot(superToolbar);
+    const story =
+      selection?.selectionTarget?.story ?? selection?.selectionTarget?.start?.story ?? selection?.target?.story ?? null;
+
+    return h(PageNumberMenu, {
+      pageNumbersState: commandState('page-numbers-apply'),
+      atCursorState: commandState('page-number-insert'),
+      inHeaderFooter: story?.storyType === 'headerFooterPart' || story?.storyType === 'headerFooterSlot',
+      suggesting: ui?.document?.getSnapshot?.()?.mode === 'suggesting',
+      initialChoice: lastPageNumberChoice,
+      loadCurrent: () => (ui ? readFirstPartyPageNumbers(ui) : Promise.resolve(null)),
+      applyPageNumbers: (choice) => executeFirstPartyCommandAsync(ui, 'page-numbers-apply', choice),
+      removePageNumbers: () => executeFirstPartyCommandAsync(ui, 'page-numbers-remove'),
+      insertAtCursor: () => executeFirstPartyCommandAsync(ui, 'page-number-insert'),
+      close: (outcome) => {
+        finish();
+        const host = ui?.viewport?.getHost?.();
+        if (outcome?.action === 'apply') {
+          lastPageNumberChoice = outcome.choice;
+          void flashPageNumberRegions(host, outcome.choice.position === 'top' ? 'header' : 'footer');
+        } else if (outcome?.action === 'remove') {
+          for (const kind of new Set(outcome.kinds)) void flashPageNumberRegions(host, kind);
+        }
+      },
+    });
+  }
 
   // table
   const tableItem = useToolbarItem({
@@ -1275,6 +1338,7 @@ export const makeDefaultItems = ({
     image,
     ...(shouldIncludeTableOfContents ? [tableOfContents] : []),
     ...(superToolbar.config?.showWatermarkButton || configuredItemNames?.has('watermark') ? [watermark] : []),
+    ...(superToolbar.config?.showPageNumberButton || configuredItemNames?.has('pageNumber') ? [pageNumber] : []),
     tableItem,
     tableActionsItem,
     makeSeparator(),

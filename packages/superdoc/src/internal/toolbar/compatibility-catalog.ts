@@ -217,6 +217,14 @@ export const BUILT_IN_TOOLBAR_CATALOG: readonly BuiltInToolbarItemEntry[] = [
     group: 'center',
     note: 'opens the shared Watermark dialog through superdoc.ui.watermark.open; the workflow owns scope, edit permissions, and apply',
   },
+  {
+    name: 'pageNumber',
+    commandId: 'page-numbers-apply',
+    instanceMethod: null,
+    disposition: 'controller-routed',
+    group: 'center',
+    note: 'opens the Page number popover: adds or changes the caret section numbers (position, first page, style, start) through page-numbers-apply, removes them through page-numbers-remove, or inserts at a header/footer cursor through page-number-insert',
+  },
   // v1 `table` → v2 `table-insert`.
   { name: 'table', commandId: 'table-insert', instanceMethod: null, disposition: 'controller-routed', group: 'center' },
   {

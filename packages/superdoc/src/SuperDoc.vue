@@ -579,11 +579,12 @@ const clearV2SessionShortcutBinding = (documentId) => {
 };
 
 // v2-keyboard-005: install the shell/session/reference shortcut binding. Toolbar
-// focus routes to the built-in toolbar chrome; field update and page-field
-// insertion route through the public Document API facade. Header/footer focus
-// and Escape session exit stay unprovided (no public host seam), so the binder
-// fails closed for those rather than reaching V1 internals. Mutating reference
-// shortcuts honor viewing/read-only suppression.
+// focus routes to the built-in toolbar chrome; PAGE insertion runs the built-in
+// page-number command; field update and NUMPAGES insertion route through the
+// public Document API facade. Header/footer focus and Escape session exit stay
+// unprovided (no public host seam), so the binder fails closed for those rather
+// than reaching V1 internals. Mutating reference shortcuts honor viewing/read-only
+// suppression.
 const installV2SessionShortcutBinding = ({ documentId, bindSessionShortcuts, documentApi }) => {
   if (!documentId) return;
   clearV2SessionShortcutBinding(documentId);
@@ -591,6 +592,15 @@ const installV2SessionShortcutBinding = ({ documentId, bindSessionShortcuts, doc
   const routes = createV2SessionShortcutRoutes({
     resolveToolbarElement: () => proxy.$superdoc?.toolbar?.toolbarContainer ?? null,
     getDocumentApi: () => documentApi ?? null,
+    pageNumberCommand: {
+      isEnabled: () => getSuperDocUI()?.commands.get('page-number-insert').getState().enabled === true,
+      execute: () => {
+        const ui = getSuperDocUI();
+        return ui
+          ? executeFirstPartyCommandAsync(ui, 'page-number-insert')
+          : Promise.resolve(UNAVAILABLE_COMMAND_RESULT);
+      },
+    },
   });
   const unbind = bindSessionShortcuts({
     routes,

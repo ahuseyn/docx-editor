@@ -165,3 +165,51 @@ describe('createV2SessionShortcutRoutes — page-field insert', () => {
     expect(insert).not.toHaveBeenCalled();
   });
 });
+
+describe('createV2SessionShortcutRoutes — PAGE through the built-in page-number command', () => {
+  function asyncSelectionDoc(insert: ReturnType<typeof vi.fn>) {
+    // The worker-backed facade answers selection reads asynchronously.
+    const footerTarget = {
+      kind: 'text',
+      story: { kind: 'story', storyType: 'headerFooterPart', refId: 'rId7' },
+      segments: [{ blockId: 'footer-p1', range: { start: 0, end: 0 } }],
+    };
+    return { selection: { current: () => Promise.resolve({ empty: true, target: footerTarget }) }, fields: { insert } };
+  }
+
+  it('runs the command instead of reading the selection synchronously', async () => {
+    const insert = vi.fn();
+    const execute = vi.fn(async () => ({ success: true }));
+    const routes = createV2SessionShortcutRoutes({
+      resolveToolbarElement: () => null,
+      getDocumentApi: () => asyncSelectionDoc(insert),
+      pageNumberCommand: { isEnabled: () => true, execute },
+    });
+    expect(routes.insertPageField?.('page')).toBe(true);
+    await flush();
+    expect(execute).toHaveBeenCalledOnce();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it('is not handled when the command is unavailable at the current selection', () => {
+    const execute = vi.fn(async () => ({ success: true }));
+    const routes = createV2SessionShortcutRoutes({
+      resolveToolbarElement: () => null,
+      getDocumentApi: () => asyncSelectionDoc(vi.fn()),
+      pageNumberCommand: { isEnabled: () => false, execute },
+    });
+    expect(routes.insertPageField?.('page')).toEqual({ handled: false, reason: 'page-field-context-unavailable' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps NUMPAGES on the Document API route', () => {
+    const execute = vi.fn(async () => ({ success: true }));
+    const routes = createV2SessionShortcutRoutes({
+      resolveToolbarElement: () => null,
+      getDocumentApi: () => asyncSelectionDoc(vi.fn()),
+      pageNumberCommand: { isEnabled: () => true, execute },
+    });
+    expect(routes.insertPageField?.('numpages')).toEqual({ handled: false, reason: 'page-field-selection-async' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+});

@@ -5919,7 +5919,7 @@ const operationSchemas: Record<OperationId, OperationSchemaSet> = {
       ...objectSchema(
         {
           target: sectionAddressSchema,
-          start: { type: 'integer', minimum: 1 },
+          start: { oneOf: [{ type: 'integer', minimum: 1 }, { type: 'null' }] },
           format: sectionPageNumberFormatSchema,
           chapterStyle: { type: 'integer', minimum: 1 },
           chapterSeparator: { type: 'string', enum: ['hyphen', 'period', 'colon', 'emDash', 'enDash'] },
@@ -9708,6 +9708,105 @@ const operationSchemas: Record<OperationId, OperationSchemaSet> = {
       ['success', 'failure'],
     ),
   },
+  ...(() => {
+    const partsSchema = arraySchema(
+      objectSchema(
+        {
+          kind: { const: 'headerFooterPart' },
+          refId: { type: 'string' },
+        },
+        ['kind', 'refId'],
+      ),
+    );
+    const kindSchema = { enum: ['header', 'footer'] };
+    const alignmentSchema = { enum: ['left', 'center', 'right'] };
+    const numberingProperties = {
+      format: sectionPageNumberFormatSchema,
+      start: { oneOf: [{ type: 'integer', minimum: 0 }, { type: 'null' }] },
+    };
+    const placementInput = objectSchema(
+      {
+        section: sectionAddressSchema,
+        kind: kindSchema,
+        alignment: alignmentSchema,
+        showOnFirstPage: { type: 'boolean' },
+        ...numberingProperties,
+      },
+      ['section', 'kind'],
+    );
+    const placementSuccess = objectSchema(
+      {
+        success: { const: true },
+        section: sectionAddressSchema,
+        kind: kindSchema,
+        parts: partsSchema,
+        titlePage: { type: 'boolean' },
+      },
+      ['success', 'section', 'kind', 'parts', 'titlePage'],
+    );
+    const failureFor = (operationId: Parameters<typeof receiptFailureSchemaFor>[0]) =>
+      objectSchema(
+        {
+          success: { const: false },
+          failure: receiptFailureSchemaFor(operationId),
+        },
+        ['success', 'failure'],
+      );
+    const insertFailure = failureFor('headerFooters.pageNumbers.insert');
+    const applyFailure = failureFor('headerFooters.pageNumbers.set');
+    const removeFailure = failureFor('headerFooters.pageNumbers.remove');
+    const removeSuccess = objectSchema(
+      {
+        success: { const: true },
+        section: sectionAddressSchema,
+        parts: partsSchema,
+      },
+      ['success', 'section', 'parts'],
+    );
+    return {
+      'headerFooters.pageNumbers.get': {
+        input: objectSchema({ section: sectionAddressSchema }, ['section']),
+        output: objectSchema(
+          {
+            section: sectionAddressSchema,
+            placements: arraySchema(
+              objectSchema(
+                {
+                  kind: kindSchema,
+                  alignment: { oneOf: [alignmentSchema, { type: 'null' }] },
+                  parts: partsSchema,
+                },
+                ['kind', 'alignment', 'parts'],
+              ),
+            ),
+            showOnFirstPage: { type: 'boolean' },
+            titlePage: { type: 'boolean' },
+            format: sectionPageNumberFormatSchema,
+            start: { oneOf: [{ type: 'integer' }, { type: 'null' }] },
+          },
+          ['section', 'placements', 'showOnFirstPage', 'titlePage', 'format', 'start'],
+        ),
+      },
+      'headerFooters.pageNumbers.insert': {
+        input: placementInput,
+        output: { oneOf: [placementSuccess, insertFailure] },
+        success: placementSuccess,
+        failure: insertFailure,
+      },
+      'headerFooters.pageNumbers.set': {
+        input: placementInput,
+        output: { oneOf: [placementSuccess, applyFailure] },
+        success: placementSuccess,
+        failure: applyFailure,
+      },
+      'headerFooters.pageNumbers.remove': {
+        input: objectSchema({ section: sectionAddressSchema, kind: kindSchema }, ['section']),
+        output: { oneOf: [removeSuccess, removeFailure] },
+        success: removeSuccess,
+        failure: removeFailure,
+      },
+    };
+  })(),
   // =========================================================================
   // watermarks.*
   // =========================================================================

@@ -11,6 +11,7 @@ import type {
   SectionDirection,
   SectionOrientation,
   SectionPageNumberingChapterSeparator,
+  SectionPageNumberingFormat,
   SectionVerticalAlign,
   SectionsClearHeaderFooterRefInput,
   SectionsClearPageBordersInput,
@@ -75,7 +76,7 @@ const SECTION_DIRECTIONS: readonly SectionDirection[] = ['ltr', 'rtl'] as const;
 const HEADER_FOOTER_KINDS: readonly SectionHeaderFooterKind[] = ['header', 'footer'] as const;
 const HEADER_FOOTER_VARIANTS: readonly SectionHeaderFooterVariant[] = ['default', 'first', 'even'] as const;
 const LINE_NUMBER_RESTARTS = ['continuous', 'newPage', 'newSection'] as const;
-const PAGE_NUMBER_FORMATS = [
+export const PAGE_NUMBER_FORMATS: readonly SectionPageNumberingFormat[] = [
   'decimal',
   'lowerLetter',
   'upperLetter',
@@ -85,7 +86,7 @@ const PAGE_NUMBER_FORMATS = [
   // Word's Hebrew numerals: hebrew1 is gematria, hebrew2 counts the alphabet.
   'hebrew1',
   'hebrew2',
-] as const;
+];
 const PAGE_NUMBER_CHAPTER_SEPARATORS: readonly SectionPageNumberingChapterSeparator[] = [
   'hyphen',
   'period',
@@ -411,7 +412,10 @@ export function executeSectionsSetPageNumbering(
     );
   }
 
-  if (input.start !== undefined) assertPositiveInteger(input.start, 'sections.setPageNumbering.start');
+  // null clears the start, so numbering continues from the previous section.
+  if (input.start !== undefined && input.start !== null) {
+    assertPositiveInteger(input.start, 'sections.setPageNumbering.start');
+  }
   if (input.format !== undefined) {
     assertOneOf(input.format, 'sections.setPageNumbering.format', PAGE_NUMBER_FORMATS);
   }

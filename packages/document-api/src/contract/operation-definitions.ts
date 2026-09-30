@@ -4859,6 +4859,78 @@ export const OPERATION_DEFINITIONS = {
     referenceDocPath: 'header-footers/parts/delete.mdx',
     referenceGroup: 'headerFooters',
   },
+  'headerFooters.pageNumbers.get': {
+    memberPath: 'headerFooters.pageNumbers.get',
+    description: v2BackedOnlyDescription(
+      "Read where a section shows page numbers, their alignment, the first-page choice, and the section's number style and start.",
+    ),
+    expectedResult:
+      'Returns the header and footer placements that show a PAGE field (empty when none), first-page visibility, the number format, and the start number or null when numbering continues.',
+    requiresDocumentContext: true,
+    metadata: readOperation({
+      idempotency: 'idempotent',
+      throws: ['TARGET_NOT_FOUND', 'INVALID_TARGET', 'INVALID_INPUT', 'CAPABILITY_UNAVAILABLE'],
+    }),
+    referenceDocPath: 'header-footers/page-numbers/get.mdx',
+    referenceGroup: 'headerFooters',
+  },
+  'headerFooters.pageNumbers.insert': {
+    memberPath: 'headerFooters.pageNumbers.insert',
+    description: v2BackedOnlyDescription(
+      "Atomically number a section's pages with a live PAGE field in its header or footer, with alignment, a first-page choice, and an optional number style and start.",
+    ),
+    expectedResult:
+      'Returns the numbered header/footer parts and whether the section uses a distinct first page; PRECONDITION_FAILED with reason page-number-exists when the target already shows a page number.',
+    requiresDocumentContext: true,
+    metadata: mutationOperation({
+      idempotency: 'non-idempotent',
+      supportsDryRun: true,
+      trackedSupport: 'never',
+      possibleFailureCodes: ['TARGET_NOT_FOUND', 'PRECONDITION_FAILED', 'CAPABILITY_UNAVAILABLE', 'INTERNAL_ERROR'],
+      throws: ['INVALID_INPUT', 'INVALID_TARGET', 'CAPABILITY_UNAVAILABLE', 'INTERNAL_ERROR'],
+      historyUnsafe: true,
+    }),
+    referenceDocPath: 'header-footers/page-numbers/insert.mdx',
+    referenceGroup: 'headerFooters',
+  },
+  'headerFooters.pageNumbers.set': {
+    memberPath: 'headerFooters.pageNumbers.set',
+    description: v2BackedOnlyDescription(
+      "Atomically add a section's page numbers or change them: move them between header and footer, realign them, show or hide them on the first page, and set the number style and start.",
+    ),
+    expectedResult:
+      'Returns the numbered header/footer parts and whether the section uses a distinct first page; PRECONDITION_FAILED with reason page-number-has-content when a moved or hidden number shares its paragraph with other text or fields.',
+    requiresDocumentContext: true,
+    metadata: mutationOperation({
+      idempotency: 'conditional',
+      supportsDryRun: true,
+      trackedSupport: 'never',
+      possibleFailureCodes: ['TARGET_NOT_FOUND', 'PRECONDITION_FAILED', 'CAPABILITY_UNAVAILABLE', 'INTERNAL_ERROR'],
+      throws: ['INVALID_INPUT', 'INVALID_TARGET', 'CAPABILITY_UNAVAILABLE', 'INTERNAL_ERROR'],
+      historyUnsafe: true,
+    }),
+    referenceDocPath: 'header-footers/page-numbers/set.mdx',
+    referenceGroup: 'headerFooters',
+  },
+  'headerFooters.pageNumbers.remove': {
+    memberPath: 'headerFooters.pageNumbers.remove',
+    description: v2BackedOnlyDescription(
+      "Atomically remove a section's PAGE fields from its header, footer, or both, keeping other header and footer content.",
+    ),
+    expectedResult:
+      'Returns the header/footer parts that lost a PAGE field; a paragraph left with only whitespace is removed. NO_OP when the section shows no page number.',
+    requiresDocumentContext: true,
+    metadata: mutationOperation({
+      idempotency: 'conditional',
+      supportsDryRun: true,
+      trackedSupport: 'never',
+      possibleFailureCodes: ['TARGET_NOT_FOUND', 'NO_OP', 'CAPABILITY_UNAVAILABLE', 'INTERNAL_ERROR'],
+      throws: ['INVALID_INPUT', 'INVALID_TARGET', 'CAPABILITY_UNAVAILABLE', 'INTERNAL_ERROR'],
+      historyUnsafe: true,
+    }),
+    referenceDocPath: 'header-footers/page-numbers/remove.mdx',
+    referenceGroup: 'headerFooters',
+  },
   // =========================================================================
   // watermarks.*
   // =========================================================================

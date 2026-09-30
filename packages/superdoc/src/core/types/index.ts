@@ -3786,6 +3786,7 @@ export type ToolbarItemId =
   | 'image'
   | 'table-of-contents'
   | 'watermark'
+  | 'page-number'
   | 'table'
   | 'table-actions'
   | 'text-align'
@@ -3804,7 +3805,7 @@ export type ToolbarItemId =
   | 'document-mode';
 
 /** Controls that `includeItems` can add to the default toolbar. */
-export type ToolbarOptionalItemId = 'formatting-marks' | 'table-of-contents' | 'watermark';
+export type ToolbarOptionalItemId = 'formatting-marks' | 'table-of-contents' | 'watermark' | 'page-number';
 
 /** Slots whose built-in toolbar icon can be replaced. */
 export type ToolbarIconId =
@@ -3819,6 +3820,7 @@ export type ToolbarIconId =
   | 'image'
   | 'table-of-contents'
   | 'watermark'
+  | 'page-number'
   | 'align-left'
   | 'align-right'
   | 'align-center'
@@ -3873,6 +3875,7 @@ export type ToolbarStringId =
   | 'image'
   | 'table-of-contents'
   | 'watermark'
+  | 'page-number'
   | 'table'
   | 'table-actions'
   | 'insert-row-before'
@@ -3984,6 +3987,9 @@ export type ToolbarCustomButtonCommandId =
   | 'direction-rtl'
   | 'clear-formatting'
   | 'table-of-contents-insert'
+  | 'page-number-insert'
+  | 'page-numbers-apply'
+  | 'page-numbers-remove'
   | 'table-add-row-before'
   | 'table-add-row-after'
   | 'table-delete-row'

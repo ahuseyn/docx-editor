@@ -7,7 +7,8 @@
 //
 //   • toolbar focus  -> shell chrome (the built-in toolbar container)
 //   • field update   -> the public Document API reference workflow facade
-//   • page-field      -> the public Document API `fields.insert` workflow
+//   • page-field      -> the built-in page-number command for PAGE; the public
+//                        Document API `fields.insert` workflow for NUMPAGES
 //
 // Header/footer focus and Escape session exit are intentionally NOT provided:
 // the public V2 host exposes no story-focus or session-exit seam yet, so those
@@ -53,11 +54,24 @@ interface SessionShortcutRoutes {
   insertPageField?: (kind: 'page' | 'numpages') => RouteReturn;
 }
 
+/** The built-in page-number command as the shortcut sees it. */
+interface PageNumberCommandRoute {
+  /** Whether the command can insert at the current selection. */
+  isEnabled: () => boolean;
+  /** Run the command as a first-party UI action. */
+  execute: () => Promise<unknown>;
+}
+
 export interface CreateV2SessionShortcutRoutesDeps {
   /** Resolve the live toolbar container element for this SuperDoc instance. */
   resolveToolbarElement: () => HTMLElement | null | undefined;
   /** Resolve the live public Document API facade, or null when unavailable. */
   getDocumentApi: () => ReferenceDocumentApi | null | undefined;
+  /**
+   * The built-in page-number command. When present, the PAGE shortcut runs it,
+   * so the shortcut and the toolbar control insert and place the caret the same way.
+   */
+  pageNumberCommand?: PageNumberCommandRoute;
 }
 
 const TOOLBAR_FOCUS_SELECTOR = '.superdoc-toolbar';
@@ -183,6 +197,11 @@ export function createV2SessionShortcutRoutes(deps: CreateV2SessionShortcutRoute
   };
 
   const insertPageField = (kind: 'page' | 'numpages'): RouteReturn => {
+    if (kind === 'page' && deps.pageNumberCommand) {
+      if (!deps.pageNumberCommand.isEnabled()) return { handled: false, reason: 'page-field-context-unavailable' };
+      void deps.pageNumberCommand.execute().catch(() => {});
+      return true;
+    }
     const doc = deps.getDocumentApi();
     if (!doc) return { handled: false, reason: 'document-api-unavailable' };
     if (!isFn(doc.fields?.insert)) return { handled: false, reason: 'page-field-insert-unavailable' };

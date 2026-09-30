@@ -97,6 +97,8 @@ function executeCommand(ui, commandId, argument, options = {}) {
   return true;
 }
 
+const PAGE_NUMBER_COMMAND_IDS = ['page-numbers-apply', 'page-number-insert'];
+
 const V1_ENABLED_ON_SELECTION_REASON = new Set([
   'bold',
   'italic',
@@ -176,6 +178,7 @@ export class BuiltInToolbar extends EventEmitter {
     showFormattingMarksButton: false,
     showTableOfContentsButton: false,
     showWatermarkButton: false,
+    showPageNumberButton: false,
   };
 
   toolbarItems = [];
@@ -732,6 +735,16 @@ export class BuiltInToolbar extends EventEmitter {
 
     if (name === 'search') {
       item.setDisabled(this.superdoc?.uiConfig?.search?.enabled !== true);
+      return true;
+    }
+
+    if (name === 'pageNumber') {
+      // The popover numbers the caret's section or inserts at a header/footer
+      // cursor. It opens whenever either action can run, and while suggesting
+      // so it can explain that numbering needs Editing.
+      const pageNumberStates = PAGE_NUMBER_COMMAND_IDS.map((commandId) => this.snapshot?.commands?.[commandId]);
+      const suggesting = this.ui?.document?.getSnapshot?.()?.mode === 'suggesting';
+      item.setDisabled(!suggesting && !pageNumberStates.some((state) => state && !state.disabled));
       return true;
     }
 

@@ -86,7 +86,6 @@ import type {
   TablesHandle,
   TableContextInfo,
   ToolbarHandle,
-  ToolbarSnapshotSlice,
   TrackChangePointHit,
   TrackChangesHandle,
   TrackChangesItem,
@@ -146,6 +145,16 @@ export function registerFirstPartyCommandMutation(
     firstPartyCommandMutations.set(superdoc, hosts);
   }
   hosts.set(host, mutation);
+}
+
+const firstPartyPageNumberReaders = new WeakMap<object, () => Promise<unknown>>();
+
+/**
+ * Read the page numbers of the caret's section for the built-in popover. Resolves
+ * null when the controller has no page-number support or no section yet.
+ */
+export function readFirstPartyPageNumbers(ui: object): Promise<unknown> {
+  return firstPartyPageNumberReaders.get(ui)?.() ?? Promise.resolve(null);
 }
 
 export function executeFirstPartyCommandAsync(
@@ -1335,6 +1344,12 @@ function collapsedTextAddressFromTarget(target: unknown): LooseRecord | null {
 
 function collapsedTextAddressFromSelection(selection: SelectionSlice): LooseRecord | null {
   return collapsedTextAddressFromTarget(selection.target) ?? collapsedTextAddressFromTarget(selection.selectionTarget);
+}
+
+/** Whether the selection is a collapsed caret in a header or footer story. */
+function isHeaderFooterCaret(selection: SelectionSlice): boolean {
+  const story = collapsedTextAddressFromSelection(selection)?.story as LooseRecord | undefined;
+  return story?.storyType === 'headerFooterPart' || story?.storyType === 'headerFooterSlot';
 }
 
 type SelectionTextSegment = {
@@ -5522,6 +5537,22 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
         'builtin',
       );
     }
+    // Field commands insert at a collapsed caret in the active header or
+    // footer. The body and ranges have no field target.
+    if (descriptor.field && !isHeaderFooterCaret(selection)) {
+      return normalizeCommandState(
+        { enabled: false, active, supported: true, reason: SUPERDOC_UI_REASONS.contextUnavailable },
+        'builtin',
+      );
+    }
+    // Page numbers add header/footer structure, which has no tracked-change
+    // form, so they are unavailable while suggesting.
+    if (descriptor.pageNumbers && readDocumentMode() === 'suggesting') {
+      return normalizeCommandState(
+        { enabled: false, active, supported: true, reason: SUPERDOC_UI_REASONS.operationUnavailable },
+        'builtin',
+      );
+    }
     // Link commands need a range selection (to wrap), an active link (to patch /
     // remove), or a collapsed text target (to insert linked text from payload).
     if (
@@ -7613,6 +7644,8 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
 
   let lastCommandSettlement: Promise<CommandExecutionResult> = Promise.resolve(false);
   let pendingCommandSettlement: Promise<CommandExecutionResult> | null = null;
+  let pendingFieldInsertion: Promise<CommandExecutionResult> | null = null;
+  let pendingPageNumbering: Promise<CommandExecutionResult> | null = null;
   let lastInlineToggleCommandSettlement: Promise<CommandExecutionResult> = Promise.resolve(false);
 
   const awaitMutationReadiness = async (result: CommandExecutionResult): Promise<CommandExecutionResult> => {
@@ -7718,7 +7751,11 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     return { result, release: releaseInlineToggleMutationOnce() };
   };
 
-  const UNSUPPORTED_TRACKED_UI_MUTATION_ROUTES = new Set(['create.tableOfContents']);
+  const UNSUPPORTED_TRACKED_UI_MUTATION_ROUTES = new Set([
+    'create.tableOfContents',
+    'headerFooters.pageNumbers.set',
+    'headerFooters.pageNumbers.remove',
+  ]);
 
   const unsupportedTrackedMutationReceipt = (route: string): SuperDocUIFailureReceipt =>
     failedReceipt(`Tracked authoring is not supported for ${route}.`);
@@ -8701,6 +8738,86 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     }
   };
 
+  /**
+   * Header/footer field commands owned by the host. They insert in the same
+   * lane as typing and leave the caret after the new field. A built-in control
+   * gets the human-attributed handle; a public call gets the code one.
+   */
+  const fieldEditingCommands = (): LooseRecord | null => {
+    if (firstPartyCommandDoc === null) return null;
+    const host = getHost();
+    if (!host) return null;
+    if (firstPartyCommandDoc !== undefined) {
+      const handles = typeof host.getHandles === 'function' ? host.getHandles() : null;
+      return (handles?.editing as LooseRecord | undefined)?.fields ?? null;
+    }
+    return typeof host.getCodeFieldEditingCommands === 'function' ? host.getCodeFieldEditingCommands() : null;
+  };
+
+  /**
+   * Route a header/footer field command (`fields.insert` at the active caret).
+   * It never waits for a selection read. The host checks its own caret when the
+   * command leaves its queue, so text typed after the command lands after the field.
+   */
+  const executeFieldCommand = (descriptor: CommandDescriptor): unknown => {
+    if (state.selection.status === 'ready' && !isHeaderFooterCaret(state.selection)) return false;
+    const options = editorMutationOptionsForRoute(descriptor.docRoute!);
+    if (options && options.success === false) return options;
+    const input = { instruction: descriptor.field!.instruction };
+    try {
+      // `getHandles()` throws while the host boots or after it is disposed.
+      const fieldCommands = fieldEditingCommands();
+      if (typeof fieldCommands?.insertAtSelection !== 'function') return false;
+      return options ? fieldCommands.insertAtSelection(input, options) : fieldCommands.insertAtSelection(input);
+    } catch {
+      return false;
+    }
+  };
+
+  /**
+   * Page numbering owned by the host. It resolves the section under the caret
+   * when it runs. A built-in control gets the human-attributed handle; a public
+   * call gets the code one.
+   */
+  const pageNumberCommands = (): LooseRecord | null => {
+    if (firstPartyCommandDoc === null) return null;
+    const host = getHost();
+    if (!host) return null;
+    if (firstPartyCommandDoc !== undefined) {
+      const handles = typeof host.getHandles === 'function' ? host.getHandles() : null;
+      return (handles?.editing as LooseRecord | undefined)?.pageNumbers ?? null;
+    }
+    return typeof host.getCodePageNumberEditingCommands === 'function' ? host.getCodePageNumberEditingCommands() : null;
+  };
+
+  /** Route a page-numbers command (`headerFooters.pageNumbers.set` or `.remove` for the caret's section). */
+  const executePageNumbersCommand = (descriptor: CommandDescriptor, input: unknown): unknown => {
+    if (!input) return false;
+    const options = editorMutationOptionsForRoute(descriptor.docRoute!);
+    if (options && options.success === false) return options;
+    const method = descriptor.pageNumbers!;
+    try {
+      // `getHandles()` throws while the host boots or after it is disposed.
+      const commands = pageNumberCommands();
+      if (typeof commands?.[method] !== 'function') return false;
+      const run = commands[method] as (input: unknown, options?: unknown) => unknown;
+      return options ? run(input, options) : run(input);
+    } catch {
+      return false;
+    }
+  };
+
+  /** The caret section's page numbers for the built-in popover, or null when unknown. */
+  const readPageNumbers = async (): Promise<unknown> => {
+    try {
+      const commands = pageNumberCommands();
+      if (typeof commands?.get !== 'function') return null;
+      return (await (commands.get as () => unknown)()) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const tableInsertionCommands = (): LooseRecord | null => {
     if (firstPartyCommandDoc === null) return null;
     const host = getHost();
@@ -8962,6 +9079,30 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     if (descriptor.create) {
       const result = executeCreateCommand(descriptor, op, normalized);
       return settleCommandExecution(result);
+    }
+    if (descriptor.field) {
+      // A second click or shortcut while the insertion is still pending is
+      // treated as a repeat of the same request, not a request for a second field.
+      if (pendingFieldInsertion) return false;
+      const immediate = settleCommandExecution(executeFieldCommand(descriptor));
+      const settlement = lastCommandSettlement;
+      pendingFieldInsertion = settlement;
+      void settlement.finally(() => {
+        if (pendingFieldInsertion === settlement) pendingFieldInsertion = null;
+      });
+      return immediate;
+    }
+    if (descriptor.pageNumbers) {
+      // A repeated activation while numbering is still pending is the same
+      // request, not a request for a second number.
+      if (pendingPageNumbering) return false;
+      const immediate = settleCommandExecution(executePageNumbersCommand(descriptor, normalized));
+      const settlement = lastCommandSettlement;
+      pendingPageNumbering = settlement;
+      void settlement.finally(() => {
+        if (pendingPageNumbering === settlement) pendingPageNumbering = null;
+      });
+      return immediate;
     }
     if (descriptor.table) {
       const result = executeTableCommand(descriptor, op);
@@ -12526,6 +12667,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
   };
   controllerRef = controller;
   firstPartyCommandExecutors.set(controller, executeFirstPartyCommandAsync);
+  firstPartyPageNumberReaders.set(controller, readPageNumbers);
   return controller;
 }
 

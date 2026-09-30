@@ -120,6 +120,11 @@ const trackChangesReplacementMode = ref(
     ? 'separate'
     : 'grouped',
 );
+// Opt-in toolbar controls, e.g. `?toolbarInclude=page-number,watermark`.
+const toolbarIncludeItems = (urlParams.get('toolbarInclude') || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
 const useCollaboration = urlParams.get('collab') === '1';
 const collabRoom = urlParams.get('room') || 'superdoc-dev-room';
 const collabUrl = resolveDevCollaborationServerUrl(urlParams.get('collabUrl'));
@@ -619,6 +624,7 @@ const init = async () => {
       visible: true,
     },
     toolbarGroups: ['left', 'center', 'right'],
+    ...(toolbarIncludeItems.length ? { ui: { toolbar: { includeItems: toolbarIncludeItems } } } : {}),
     pagination: useLayoutEngine.value && !useWebLayout.value,
     viewOptions: { layout: useWebLayout.value ? 'web' : 'print' },
     // Web layout + layout engine now uses semantic flow mode.

@@ -22,6 +22,9 @@ const string: ToolbarStringId = 'document-mode-editing-description';
 const builtInCommand: BuiltInCommandId = 'document-mode';
 const applicationCommand: ToolbarCommandId = 'save-document';
 const customButtonCommand: ToolbarCustomButtonCommandId = 'bold';
+const pageNumberButtonCommand: ToolbarCustomButtonCommandId = 'page-number-insert';
+const pageNumbersButtonCommand: ToolbarCustomButtonCommandId = 'page-numbers-apply';
+const removePageNumbersButtonCommand: ToolbarCustomButtonCommandId = 'page-numbers-remove';
 const customDropdownCommand: ToolbarCustomDropdownCommandId = 'font-family';
 const fontOption: FontFamilyOption = { value: 'Inter', label: 'Inter' };
 const toolbarFontOption: NonNullable<ToolbarConfig['fontOptions']>[number] = fontOption;
@@ -45,6 +48,7 @@ const itemIds = {
   image: true,
   'table-of-contents': true,
   watermark: true,
+  'page-number': true,
   table: true,
   'table-actions': true,
   'text-align': true,
@@ -110,6 +114,14 @@ const toolbar = {
 
 const _config: Config = { selector: '#editor', ui: { toolbar } };
 
+// Page number is opt-in: through includeItems or an explicit items placement.
+const pageNumberIncluded = { includeItems: ['page-number'] } as const satisfies ToolbarConfig;
+const pageNumberPlaced = {
+  items: { center: ['bold', 'page-number'] },
+  icons: { 'page-number': '<svg />' },
+  strings: { 'page-number': 'Page number' },
+} as const satisfies ToolbarConfig;
+
 // @ts-expect-error toolbar regions are left, center, or right
 const _badRegion: ToolbarRegion = 'bottom';
 // @ts-expect-error item ids are the controls the built-in toolbar exposes
@@ -154,6 +166,11 @@ void [
   builtInCommand,
   applicationCommand,
   customButtonCommand,
+  pageNumberButtonCommand,
+  pageNumbersButtonCommand,
+  removePageNumbersButtonCommand,
+  pageNumberIncluded,
+  pageNumberPlaced,
   customDropdownCommand,
   fontOption,
   toolbarFontOption,

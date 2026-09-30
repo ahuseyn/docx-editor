@@ -56,6 +56,9 @@ const hasColorBar = computed(() => {
 
 .sd-toolbar-icon__icon :deep(svg) {
   width: auto; /* needed for safari */
+  /* A definite height sizes viewBox-only icons from their aspect ratio. Without
+     it they collapse to 0x0 in the wrapped overflow menu. */
+  height: 16px;
   max-height: 16px;
 }
 

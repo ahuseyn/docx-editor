@@ -22,7 +22,17 @@ import type {
   HeaderFootersPartsCreateInput,
   HeaderFootersPartsDeleteInput,
   HeaderFooterPartsMutationResult,
+  HeaderFooterPageNumberAlignment,
+  HeaderFootersPageNumbersInsertInput,
+  HeaderFooterPageNumbersInsertResult,
+  HeaderFootersPageNumbersSetInput,
+  HeaderFooterPageNumbersSetResult,
+  HeaderFootersPageNumbersRemoveInput,
+  HeaderFooterPageNumbersRemoveResult,
+  HeaderFootersPageNumbersGetInput,
+  HeaderFooterPageNumbersInfo,
 } from './header-footers.types.js';
+import { PAGE_NUMBER_FORMATS } from '../sections/sections.js';
 
 export type {
   HeaderFooterKind,
@@ -49,6 +59,20 @@ export type {
   HeaderFooterRefsMutationFailureResult,
   HeaderFooterPartsMutationSuccessResult,
   HeaderFooterPartsMutationFailureResult,
+  HeaderFooterPageNumberAlignment,
+  HeaderFootersPageNumbersInsertInput,
+  HeaderFooterPageNumbersInsertResult,
+  HeaderFooterPageNumbersInsertSuccessResult,
+  HeaderFooterPageNumbersInsertFailureResult,
+  HeaderFootersPageNumbersNumberingInput,
+  HeaderFootersPageNumbersSetInput,
+  HeaderFooterPageNumbersSetResult,
+  HeaderFootersPageNumbersRemoveInput,
+  HeaderFooterPageNumbersRemoveResult,
+  HeaderFooterPageNumbersRemoveSuccessResult,
+  HeaderFootersPageNumbersGetInput,
+  HeaderFooterPageNumberPlacement,
+  HeaderFooterPageNumbersInfo,
 } from './header-footers.types.js';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +81,7 @@ export type {
 
 const HEADER_FOOTER_KINDS: readonly HeaderFooterKind[] = ['header', 'footer'] as const;
 const HEADER_FOOTER_VARIANTS: readonly HeaderFooterVariant[] = ['default', 'first', 'even'] as const;
+const PAGE_NUMBER_ALIGNMENTS: readonly HeaderFooterPageNumberAlignment[] = ['left', 'center', 'right'] as const;
 
 // ---------------------------------------------------------------------------
 // Adapter interface
@@ -79,9 +104,18 @@ export interface HeaderFootersAdapter {
     create(input: HeaderFootersPartsCreateInput, options?: MutationOptions): HeaderFooterPartsMutationResult;
     delete(input: HeaderFootersPartsDeleteInput, options?: MutationOptions): HeaderFooterPartsMutationResult;
   };
+  /** Optional: adapters without page-number support fail closed with CAPABILITY_UNAVAILABLE. */
+  pageNumbers?: {
+    get(input: HeaderFootersPageNumbersGetInput): HeaderFooterPageNumbersInfo;
+    insert(input: HeaderFootersPageNumbersInsertInput, options?: MutationOptions): HeaderFooterPageNumbersInsertResult;
+    set(input: HeaderFootersPageNumbersSetInput, options?: MutationOptions): HeaderFooterPageNumbersSetResult;
+    remove(input: HeaderFootersPageNumbersRemoveInput, options?: MutationOptions): HeaderFooterPageNumbersRemoveResult;
+  };
 }
 
-export type HeaderFootersApi = HeaderFootersAdapter;
+export type HeaderFootersApi = Omit<HeaderFootersAdapter, 'pageNumbers'> & {
+  pageNumbers: NonNullable<HeaderFootersAdapter['pageNumbers']>;
+};
 
 // ---------------------------------------------------------------------------
 // Validation helpers
@@ -279,4 +313,92 @@ export function executeHeaderFootersPartsDelete(
 ): HeaderFooterPartsMutationResult {
   assertHeaderFooterPartTarget(input, 'headerFooters.parts.delete');
   return adapter.parts.delete(input, normalizeMutationOptions(options));
+}
+
+function requirePageNumbers(
+  adapter: HeaderFootersAdapter,
+  operation: string,
+): NonNullable<HeaderFootersAdapter['pageNumbers']> {
+  if (!adapter.pageNumbers) {
+    throw new DocumentApiValidationError('CAPABILITY_UNAVAILABLE', `${operation} is not available for this document.`);
+  }
+  return adapter.pageNumbers;
+}
+
+function assertPageNumbersInput(input: unknown, operation: string): asserts input is { section: SectionAddress } {
+  if (!isRecord(input)) {
+    throw new DocumentApiValidationError('INVALID_INPUT', `${operation} input must be an object.`);
+  }
+  assertSectionAddress(input.section, `${operation}.section`);
+}
+
+function assertPageNumbersPlacement(
+  input: HeaderFootersPageNumbersInsertInput | HeaderFootersPageNumbersSetInput,
+  operation: string,
+): void {
+  assertOneOf(input.kind, `${operation}.kind`, HEADER_FOOTER_KINDS);
+  if (input.alignment !== undefined) {
+    assertOneOf(input.alignment, `${operation}.alignment`, PAGE_NUMBER_ALIGNMENTS);
+  }
+  if (input.showOnFirstPage !== undefined) {
+    assertBoolean(input.showOnFirstPage, `${operation}.showOnFirstPage`);
+  }
+  if (input.format !== undefined) {
+    assertOneOf(input.format, `${operation}.format`, PAGE_NUMBER_FORMATS);
+  }
+  if (input.start !== undefined && input.start !== null) {
+    if (typeof input.start !== 'number' || !Number.isInteger(input.start) || input.start < 0) {
+      throw new DocumentApiValidationError(
+        'INVALID_INPUT',
+        `${operation}.start must be a non-negative integer or null.`,
+        { field: `${operation}.start`, value: input.start },
+      );
+    }
+  }
+}
+
+export function executeHeaderFootersPageNumbersGet(
+  adapter: HeaderFootersAdapter,
+  input: HeaderFootersPageNumbersGetInput,
+): HeaderFooterPageNumbersInfo {
+  assertPageNumbersInput(input, 'headerFooters.pageNumbers.get');
+  return requirePageNumbers(adapter, 'headerFooters.pageNumbers.get').get(input);
+}
+
+export function executeHeaderFootersPageNumbersInsert(
+  adapter: HeaderFootersAdapter,
+  input: HeaderFootersPageNumbersInsertInput,
+  options?: MutationOptions,
+): HeaderFooterPageNumbersInsertResult {
+  assertPageNumbersInput(input, 'headerFooters.pageNumbers.insert');
+  assertPageNumbersPlacement(input, 'headerFooters.pageNumbers.insert');
+  return requirePageNumbers(adapter, 'headerFooters.pageNumbers.insert').insert(
+    input,
+    normalizeMutationOptions(options),
+  );
+}
+
+export function executeHeaderFootersPageNumbersSet(
+  adapter: HeaderFootersAdapter,
+  input: HeaderFootersPageNumbersSetInput,
+  options?: MutationOptions,
+): HeaderFooterPageNumbersSetResult {
+  assertPageNumbersInput(input, 'headerFooters.pageNumbers.set');
+  assertPageNumbersPlacement(input, 'headerFooters.pageNumbers.set');
+  return requirePageNumbers(adapter, 'headerFooters.pageNumbers.set').set(input, normalizeMutationOptions(options));
+}
+
+export function executeHeaderFootersPageNumbersRemove(
+  adapter: HeaderFootersAdapter,
+  input: HeaderFootersPageNumbersRemoveInput,
+  options?: MutationOptions,
+): HeaderFooterPageNumbersRemoveResult {
+  assertPageNumbersInput(input, 'headerFooters.pageNumbers.remove');
+  if (input.kind !== undefined) {
+    assertOneOf(input.kind, 'headerFooters.pageNumbers.remove.kind', HEADER_FOOTER_KINDS);
+  }
+  return requirePageNumbers(adapter, 'headerFooters.pageNumbers.remove').remove(
+    input,
+    normalizeMutationOptions(options),
+  );
 }
