@@ -1490,9 +1490,10 @@ export interface SearchHandle extends SnapshotSubscribable<SearchSlice> {
    * Replace the active match through the host search session, then re-query.
    * Fails closed with `document-readonly` in viewing mode, `search-unavailable`
    * when the host exposes no search facade, and `operation-unavailable` when
-   * there is no active match / replace cannot be applied.
+   * there is no active match / replace cannot be applied. A stale match ref returns
+   * `target-unresolved`; rerun `find()` before retrying.
    *
-   * Worker-backed (async Document API) sessions return a promise that resolves
+   * Asynchronous host and worker sessions return a promise that resolves
    * with the settled outcome once the mutation lands; hold any pending UI state
    * until it resolves.
    */
@@ -1500,10 +1501,11 @@ export interface SearchHandle extends SnapshotSubscribable<SearchSlice> {
   /**
    * Replace every current match exactly once through the host search session.
    * Fails closed with `document-readonly` in viewing mode, `search-unavailable`
-   * when unavailable, and `operation-unavailable` when the full match set
-   * cannot be enumerated (truncated) or replace cannot be applied.
+   * when unavailable, `search-truncated` when the complete match set cannot be
+   * enumerated, and `target-unresolved` when a match ref is stale. A rejected
+   * batch applies no edits. Other unavailable operations return `operation-unavailable`.
    *
-   * Worker-backed (async Document API) sessions return a promise that resolves
+   * Asynchronous host and worker sessions return a promise that resolves
    * with the settled outcome once the mutation lands; hold any pending UI state
    * until it resolves.
    */
@@ -1515,8 +1517,9 @@ export interface SearchController
   extends Omit<SearchHandle, keyof SnapshotSubscribable<SearchSlice> | 'search'>, SnapshotSubscribable<SearchSnapshot> {
   /**
    * Find `query` in the open document. Returns the latest snapshot with the
-   * match total and active index. When a worker finishes later, `observe()`
-   * publishes the settled result.
+   * match total and active index. For an asynchronous session, this snapshot may
+   * still be pending (including an initial zero total). Use `observe()` for the
+   * settled result before deciding that there are no matches or enabling replacement.
    */
   find(query: string, options?: SearchQueryOptions): SearchSnapshot;
   /**

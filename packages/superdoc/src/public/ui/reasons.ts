@@ -77,6 +77,8 @@ export const SUPERDOC_UI_REASONS = {
   searchUnavailable: 'search-unavailable',
   /** The search pattern is an invalid or unsafe regular expression. */
   searchInvalidPattern: 'search-invalid-pattern',
+  /** Replace All cannot enumerate the complete match set, so no edits were applied. */
+  searchTruncated: 'search-truncated',
   /**
    * Find-and-replace is intentionally out of the first v2 search parity tranche.
    * The shared search surface implements query / navigation only; replace and

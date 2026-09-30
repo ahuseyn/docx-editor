@@ -14302,7 +14302,7 @@ describe('public ui — shared search surface (row 747 / search ownership)', () 
     expect(ui.search.getSnapshot()).toMatchObject({ total: 1200, canReplace: true, canReplaceAll: false });
 
     await expect(Promise.resolve(ui.search.replace('a'))).resolves.toEqual({ ok: true });
-    expect(ui.search.replaceAll('a')).toEqual({ ok: false, reason: SUPERDOC_UI_REASONS.operationUnavailable });
+    expect(ui.search.replaceAll('a')).toEqual({ ok: false, reason: 'search-truncated' });
     expect(editSearch.replaceAll).not.toHaveBeenCalled();
   });
 

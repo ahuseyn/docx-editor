@@ -11782,9 +11782,43 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     ) {
       return { ok: false, reason: SUPERDOC_UI_REASONS.documentReadonly };
     }
-    // rejected (no-query/no-match/truncated/document-api-unavailable),
-    // receipt-failure, or an unrecognized shape all fail closed the same way.
+    if (record?.status === 'rejected' && record.reason === 'truncated') {
+      return { ok: false, reason: SUPERDOC_UI_REASONS.searchTruncated };
+    }
+    const failure = record?.failure;
+    if (
+      record?.status === 'receipt-failure' &&
+      failure &&
+      typeof failure === 'object' &&
+      (failure as LooseRecord).code === 'REVISION_MISMATCH'
+    ) {
+      return { ok: false, reason: SUPERDOC_UI_REASONS.targetUnresolved };
+    }
     return { ok: false, reason: SUPERDOC_UI_REASONS.operationUnavailable };
+  };
+  const settleHostSearchReplacement = (result: unknown): WorkflowActionResult | Promise<WorkflowActionResult> => {
+    // Capture before emitting: observers can close, clear, switch editors or
+    // destroy the controller synchronously. Staleness suppresses publication,
+    // while the caller still receives the actual mutation outcome.
+    const generation = searchRequestGeneration;
+    syncSearchStateFromHost();
+    emitSearch();
+    if (!isPromiseLike(result)) return mapHostReplaceResult(result);
+    return Promise.resolve(result).then(
+      (resolved) => {
+        if (generation === searchRequestGeneration) {
+          syncSearchStateFromHost();
+          emitSearch();
+        }
+        return mapHostReplaceResult(resolved);
+      },
+      () => {
+        if (generation === searchRequestGeneration) {
+          setSearchState({ available: false, reason: SUPERDOC_UI_REASONS.searchUnavailable });
+        }
+        return { ok: false, reason: SUPERDOC_UI_REASONS.searchUnavailable };
+      },
+    );
   };
   const searchSnap = snapshotHandle<SearchSnapshot>({
     get: () => syncSearchStateFromHost(),
@@ -12173,9 +12207,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
         () => host.replaceCurrent(typeof replacement === 'string' ? replacement : ''),
         null,
       );
-      syncSearchStateFromHost();
-      emitSearch();
-      return mapHostReplaceResult(result);
+      return settleHostSearchReplacement(result);
     },
     replaceAll: (replacement: string): WorkflowActionResult | Promise<WorkflowActionResult> => {
       const host = getHostSearch();
@@ -12184,7 +12216,15 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
         if (!editSearch || typeof editSearch.replaceAll !== 'function' || typeof editSearch.getState !== 'function') {
           return { ok: false, reason: SUPERDOC_UI_REASONS.searchUnavailable };
         }
-        if (!readEditCommandCanReplaceAll()) return { ok: false, reason: SUPERDOC_UI_REASONS.operationUnavailable };
+        if (!readEditCommandCanReplaceAll()) {
+          return {
+            ok: false,
+            reason:
+              readEditCommandStateEntry('find.replaceAll')?.reason === 'search-truncated'
+                ? SUPERDOC_UI_REASONS.searchTruncated
+                : SUPERDOC_UI_REASONS.operationUnavailable,
+          };
+        }
         const result = safeCall<unknown>(
           () => editSearch.replaceAll({ replacement: typeof replacement === 'string' ? replacement : '' }),
           null,
@@ -12240,9 +12280,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
         return { ok: false, reason: SUPERDOC_UI_REASONS.operationUnavailable };
       }
       const result = safeCall<unknown>(() => host.replaceAll(typeof replacement === 'string' ? replacement : ''), null);
-      syncSearchStateFromHost();
-      emitSearch();
-      return mapHostReplaceResult(result);
+      return settleHostSearchReplacement(result);
     },
   };
 
