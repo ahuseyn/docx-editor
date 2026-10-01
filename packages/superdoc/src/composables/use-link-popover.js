@@ -818,11 +818,8 @@ export function useLinkPopover({
   function openDefaultPopover(ctx) {
     closeCurrentPopover('replace');
 
-    // A TOC entry link is navigational, not an editable hyperlink: clicking it
-    // jumps to the heading (MS Word behaviour) instead of opening the link
-    // editor — in every mode, not just viewing. Editing the entry's heading text
-    // is done by keyboard navigation, not by clicking the link. Non-TOC anchor
-    // links keep the normal editing-mode popover.
+    // The V2 host arbitrates TOC editing gestures before link activation;
+    // deliberate activation navigates rather than opening the hyperlink editor.
     if (ctx.isAnchorLink && isTocEntryLinkElement(ctx.element)) {
       void navigateToAnchor(ctx.href, { placeCaret: ctx.documentMode !== 'viewing' });
       return;

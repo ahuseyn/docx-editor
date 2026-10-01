@@ -301,10 +301,14 @@ const LINK_AND_TOC_STYLES = `
   white-space: nowrap !important;
 }
 
+.superdoc-text-run[data-sdt-docpart-gallery="Table of Contents"]:not(.superdoc-link) {
+  cursor: text;
+}
+
 .superdoc-toc-entry .superdoc-link {
   color: inherit !important;
   text-decoration: none !important;
-  cursor: default;
+  cursor: pointer;
   /* Disable native link drag so our pointer loop can run text-selection. */
   -webkit-user-drag: none;
   user-drag: none;
@@ -314,7 +318,7 @@ const LINK_AND_TOC_STYLES = `
   text-decoration: none;
 }
 
-/* Override focus styles for TOC links (they're not interactive) */
+/* TOC links use the document selection overlay for focus feedback. */
 .superdoc-toc-entry .superdoc-link:focus-visible {
   outline: none;
 }

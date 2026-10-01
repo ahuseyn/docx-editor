@@ -91,6 +91,25 @@ describe('useLinkPopover', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([undefined, null, ''])('SD-5415 missing or empty href %s cannot navigate or place a caret', async (href) => {
+    const setSelectionTarget = vi.fn();
+    const getBookmark = vi.fn();
+    const editor = {
+      authoring: { setSelectionTarget },
+      doc: { bookmarks: { get: getBookmark } },
+    };
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const { popover } = createSubject({ editor });
+
+    expect(() => popover.handleLinkClick(createPayload({ href }))).not.toThrow();
+    await tick();
+
+    expect(getBookmark).not.toHaveBeenCalled();
+    expect(setSelectionTarget).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
+    popover.destroy();
+  });
+
   it('opens the built-in link popover for editing mode without a resolver', async () => {
     const { popover, manager, ui } = createSubject();
 
