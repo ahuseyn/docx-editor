@@ -22,6 +22,7 @@ const routes = [
   ['editor/migrate-from-v1/overview/index.html', 'Migrate from v1'],
   ['editor/migrate-from-v1/removed-apis/index.html', 'Removed in v2'],
   ['editor/configuration/index.html', 'Configure the Editor'],
+  ['editor/interaction-permissions/index.html', 'Choose interaction capabilities and permissions'],
   ['editor/load-and-save-documents/index.html', 'Load and save a DOCX'],
   ['editor/export-options/index.html', 'Control DOCX export'],
   ['editor/document-modes/index.html', 'Choose a document mode'],

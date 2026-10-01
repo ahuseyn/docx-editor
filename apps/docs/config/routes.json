@@ -571,6 +571,7 @@
     "/editor/fonts/",
     "/editor/frameworks/react/",
     "/editor/frameworks/sveltekit/",
+    "/editor/interaction-permissions/",
     "/editor/license/",
     "/editor/lifecycle-and-events/",
     "/editor/load-and-save-documents/",

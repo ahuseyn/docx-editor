@@ -263,7 +263,10 @@ const presentation = {
   trackedChanges?: { allowDecisions?: boolean; };
 }`,
     example: { value: '{ comments: … }', code: "interaction: { comments: { level: 'read' } }" },
-    guide: { label: 'Choose your interface', href: '/editor/who-renders-the-ui' },
+    guide: { label: 'Interaction and permissions', href: '/editor/interaction-permissions' },
+  },
+  permissionResolver: {
+    guide: { label: 'Interaction and permissions', href: '/editor/interaction-permissions' },
   },
   surfaces: {
     example: { value: '{ dialog: … }', code: 'surfaces: { dialog: { closeOnEscape: true } }' },

@@ -1,0 +1,96 @@
+---
+title: Choose interaction capabilities and permissions
+navTitle: Interaction and permissions
+description: Choose instance actions, customize client-side decisions, and enforce authorization in your backend.
+---
+
+Start with your application's verified permissions. Use them to configure the Editor's available actions, then enforce
+the same policy at the trusted boundary where your application accepts changes.
+
+## Choose the layer
+
+| Layer                | Use it for                                                                                             | Who owns the decision                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `interaction`        | Set the actions this Editor instance allows, such as reading comments or deciding tracked changes.     | Your application configures client-side capabilities.                 |
+| `permissionResolver` | Customize supported client-side checks for a particular comment, tracked change, or versioning action. | Your synchronous callback overrides or preserves a built-in decision. |
+| Trusted backend      | Authorize document reads, saves, collaboration room access, and changes your service accepts.          | Your server verifies identity and enforces application policy.        |
+
+Use `ui` to choose what SuperDoc renders. Hiding the comments panel with `ui.comments: false` does not remove comments
+or grant or revoke an action. [Custom comments controls](/editor/custom-ui/comments) still need to respect available
+actions and handle the controller's result.
+
+## Set the instance capabilities
+
+`interaction.comments.level` is the highest comment interaction level the instance allows. Levels are cumulative;
+specific actions can still be blocked by their permission checks or document state.
+
+| Level     | Available comment actions before other checks                    |
+| --------- | ---------------------------------------------------------------- |
+| `read`    | Read existing threads.                                           |
+| `write`   | Read, create, reply, edit, and delete.                           |
+| `resolve` | All write actions, plus resolve and reopen. This is the default. |
+
+Comment levels do not control tracked-change decisions. Set `interaction.trackedChanges.allowDecisions: false` to
+block accept and reject in this instance. Its default is `true`; document mode and command availability can still
+block decisions. Choosing `suggesting` controls how new edits are recorded, not who may decide existing proposals.
+
+For example, use `write` when contributors may discuss a passage but should not resolve its thread. Use `resolve`
+when reviewers may resolve threads, then use the resolver for supported checks that differ by author or action.
+See [Review workflows](/editor/review-workflow) for proposing changes without deciding them.
+
+## Customize a specific client-side check
+
+Set `permissionResolver` at the top level of the Editor configuration. The callback is synchronous: return `true`
+or `false` to override a permission decision, or `undefined` to preserve `defaultDecision`. An async callback is not
+supported. The default uses the configured `role` and `isInternal` values.
+
+The callback receives `permission`, `role`, `isInternal`, `defaultDecision`, `comment`, `trackedChange`, `currentUser`,
+and `superdoc`. Entity values may be `null` when the check has no corresponding entity. The configured browser user
+and role describe this client; they are not proof of authenticated identity.
+
+In the Quickstart project, add these options alongside the existing document, user, and export configuration:
+
+<include>../../../snippets/editor/interaction-permissions.ts</include>
+
+This example keeps comment resolution available but denies deleting someone else's comment and rejecting someone
+else's tracked change. Other checks retain their built-in decision. In Vanilla, spread `permissionOptions` into
+`new SuperDoc()`; in React, spread it onto `SuperDocEditor`.
+
+A resolver allowance cannot override an `interaction` restriction or make an unavailable action possible. A denied
+check can further restrict an action that the instance otherwise permits. For example, returning `true` for
+`RESOLVE_OTHER` does not make comment resolution available at level `write`.
+
+### Permission keys
+
+These are the current permission constants. They do not mean every UI surface or programmatic method invokes every
+check. In particular, `COMMENTS_OVERFLOW` is the own-comment constant's literal value; it has no `_OWN` suffix.
+
+| Keys                                           | Check                                                                                                              |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `RESOLVE_OWN`, `RESOLVE_OTHER`                 | Resolve or reopen a comment, or accept a tracked change, according to authorship.                                  |
+| `REJECT_OWN`, `REJECT_OTHER`                   | Reject a tracked change according to authorship.                                                                   |
+| `COMMENTS_DELETE_OWN`, `COMMENTS_DELETE_OTHER` | Delete a comment according to authorship.                                                                          |
+| `COMMENTS_OVERFLOW`, `COMMENTS_OVERFLOW_OTHER` | Comment overflow permission constants; current built-in comment action availability checks the actions themselves. |
+| `UPLOAD_VERSION`, `VERSION_HISTORY`            | Versioning permission constants; your versioning integration must apply its policy where it handles these actions. |
+
+For custom UI, check action availability and inspect mutation receipts. A generic permission check alone does not
+establish that an action can run. Direct Document API calls and headless operations are separate execution surfaces:
+do not assume `permissionResolver` intercepts every mutation. Authorize application-owned commands before invoking
+them. See [Document API comments](/document-api/comments) and [custom review controls](/editor/custom-ui/tracked-changes).
+
+## Enforce policy where changes are accepted
+
+Both Editor mechanisms run in the browser and are not an authorization boundary. Someone who controls the client
+can change its configuration or send a request without using your buttons.
+
+Your backend must verify the authenticated identity and document access before serving a document, accepting a save,
+or allowing a collaboration connection. Protect separate file endpoints as well as the room. Use
+[Control room access](/editor/collaboration/control-room-access) for the collaboration connection example.
+
+If your policy allows discussion but forbids changing document text, granting save access alone does not enforce that
+distinction. Accepting arbitrary DOCX uploads or unrestricted collaboration updates cannot guarantee comment-only
+changes. Your trusted service must validate the permitted changes or expose operations it can authorize individually.
+Choose a collaboration provider and persistence path that can enforce the policy you need.
+
+Keep client settings aligned with that policy for a clear user experience. Do not treat a hidden button, a resolver
+result, or a browser-supplied author as evidence that the backend request is authorized.

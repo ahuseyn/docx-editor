@@ -9,6 +9,51 @@ import { loader } from 'fumadocs-core/source';
 const appRoot = fileURLToPath(new URL('../', import.meta.url));
 const contentRoot = new URL('../content/docs/', import.meta.url);
 
+test('interaction permissions guide separates instance actions, resolver checks, and backend authorization', async () => {
+  const page = await readFile(new URL('editor/interaction-permissions.mdx', contentRoot), 'utf8');
+  for (const layer of ['`interaction`', '`permissionResolver`', 'Trusted backend']) {
+    assert.ok(page.includes(layer), `decision table must explain ${layer}`);
+  }
+  for (const level of ['read', 'write', 'resolve']) {
+    assert.match(page, new RegExp('\\|\\s+`' + level + '`\\s+\\|', 'u'));
+  }
+  assert.match(page, /interaction\.trackedChanges\.allowDecisions/u);
+  assert.match(page, /cannot override[\s\S]*interaction/u);
+  assert.match(page, /Document API[\s\S]*permissionResolver/u);
+  assert.match(page, /arbitrary DOCX[\s\S]*collaboration updates/u);
+});
+
+test('interaction permissions guide documents the resolver contract and runtime permission keys', async () => {
+  const page = await readFile(new URL('editor/interaction-permissions.mdx', contentRoot), 'utf8');
+  const { PERMISSIONS } = await import('../../../packages/superdoc/src/core/collaboration/permissions.js');
+  for (const permission of Object.values(PERMISSIONS)) {
+    assert.ok(page.includes(`\`${permission}\``), `missing resolver key ${permission}`);
+  }
+  assert.match(page, /synchronous/u);
+  assert.match(page, /`undefined`[\s\S]*`defaultDecision`/u);
+  assert.match(page, /COMMENTS_DELETE_OTHER/u);
+  assert.match(page, /snippets\/editor\/interaction-permissions\.ts/u);
+  const example = await readFile(new URL('../snippets/editor/interaction-permissions.ts', import.meta.url), 'utf8');
+  assert.match(example, /return undefined/u);
+  const { permissionOptions } = await import('../snippets/editor/interaction-permissions.ts');
+  for (const permission of ['COMMENTS_DELETE_OTHER', 'REJECT_OTHER']) {
+    assert.equal(permissionOptions.permissionResolver({ permission }), false);
+  }
+  for (const permission of ['COMMENTS_DELETE_OWN', 'RESOLVE_OTHER', 'VERSION_HISTORY']) {
+    assert.equal(permissionOptions.permissionResolver({ permission }), undefined);
+  }
+  assert.match(page, /constants[\s\S]*do not/u);
+});
+
+test('interaction permissions guide is reachable from navigation, configuration, and comment workflows', async () => {
+  const { pages } = JSON.parse(await readFile(new URL('editor/meta.json', contentRoot), 'utf8'));
+  assert.ok(pages.includes('interaction-permissions'));
+  for (const path of ['editor/configuration.mdx', 'editor/comments.mdx', 'editor/built-in-ui/comments.mdx', 'editor/custom-ui/comments.mdx', 'editor/review-workflow.mdx']) {
+    const page = await readFile(new URL(path, contentRoot), 'utf8');
+    assert.ok(page.includes('/editor/interaction-permissions'), `${path} must link to the decision path`);
+  }
+});
+
 test('Editor navigation places setup and accessibility before feature depth', async () => {
   const { pages } = JSON.parse(await readFile(new URL('editor/meta.json', contentRoot), 'utf8'));
   const sectionOf = (page) => {

@@ -6,6 +6,7 @@
     "index",
     "quickstart",
     "configuration",
+    "interaction-permissions",
     "document-modes",
     "lifecycle-and-events",
     "load-and-save-documents",
