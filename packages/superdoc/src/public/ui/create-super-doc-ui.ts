@@ -11661,6 +11661,9 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
   // from the shell is trusted until the request that matches this generation
   // settles; snapshots report no matches in the interim.
   let pendingFallbackGeneration: number | null = null;
+  // A completed fallback remains reusable only until the document, editor or
+  // query changes. The shell's snapshot alone cannot prove those boundaries.
+  let completedFallbackSearch: LooseRecord | null = null;
 
   /**
    * How to tear down the session that is currently open, captured when it was
@@ -11713,6 +11716,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
    * is deliberately not made here.
    */
   const resetSearchForActiveEditorChange = (): void => {
+    completedFallbackSearch = null;
     searchRequestGeneration += 1;
     pendingFallbackGeneration = null;
     shellFallbackOutstanding = false;
@@ -11818,8 +11822,12 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
       safeCall<unknown>(() => editSearch.query({ query: '' }), null);
     }
   };
-  const readEditCommandCanReplace = (): boolean => readEditCommandStateEntry('find.replace')?.enabled === true;
-  const readEditCommandCanReplaceAll = (): boolean => readEditCommandStateEntry('find.replaceAll')?.enabled === true;
+  const readEditCommandCanReplace = (): boolean =>
+    pendingFallbackGeneration !== searchRequestGeneration &&
+    readEditCommandStateEntry('find.replace')?.enabled === true;
+  const readEditCommandCanReplaceAll = (): boolean =>
+    pendingFallbackGeneration !== searchRequestGeneration &&
+    readEditCommandStateEntry('find.replaceAll')?.enabled === true;
   const applyHostSearchResult = (
     result: unknown,
     fallbackCanReplace = false,
@@ -11984,6 +11992,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     close: (): void => {
       // Invalidate in-flight async queries so a late result cannot write into
       // the closed session.
+      completedFallbackSearch = null;
       searchRequestGeneration += 1;
       cancelRefreshShellSearch();
       if (releaseActiveSearchSession) {
@@ -12014,6 +12023,31 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
       const caseSensitive = Boolean(options?.caseSensitive);
       const includeDeletedText = (options?.includeTrackedDeletions ?? options?.includeDeletedText) === true;
       const regex = options?.regex === true;
+      if (
+        (!host || typeof host.setSession !== 'function') &&
+        completedFallbackSearch !== null &&
+        completedFallbackSearch === getEditCommandSearch() &&
+        pendingFallbackGeneration !== searchRequestGeneration &&
+        searchRefreshTimer === null &&
+        searchState.open &&
+        searchState.available &&
+        !searchState.reason &&
+        searchState.query === query &&
+        searchState.caseSensitive === caseSensitive &&
+        searchState.includeDeletedText === includeDeletedText &&
+        searchState.regex === regex
+      ) {
+        // Re-finding the completed session must not clear it and start another
+        // worker request before an immediately following replacement.
+        syncSearchStateFromHost();
+        emitSearch();
+        return searchState;
+      }
+      completedFallbackSearch = null;
+      if (searchRefreshTimer !== null) {
+        clearTimeout(searchRefreshTimer);
+        searchRefreshTimer = null;
+      }
       const generation = ++searchRequestGeneration;
       cancelRefreshShellSearch();
       // A previous find() may have handed the shell a Document API fallback
@@ -12068,6 +12102,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
                 if (generation !== searchRequestGeneration) return;
                 shellFallbackOutstanding = false;
                 pendingFallbackGeneration = null;
+                completedFallbackSearch = editSearch;
                 applyHostSearchResult(resolved, readEditCommandCanReplace(), readEditCommandCanReplaceAll());
               },
               () => {
@@ -12083,6 +12118,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
             return searchState;
           }
           pendingFallbackGeneration = null;
+          completedFallbackSearch = editSearch;
           applyHostSearchResult(result, readEditCommandCanReplace(), readEditCommandCanReplaceAll());
           applyHostSearchResult(
             safeCall<unknown>(() => editSearch.getState(), null),
@@ -12255,6 +12291,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
       return { ok: true };
     },
     clear: (): void => {
+      completedFallbackSearch = null;
       // Same boundary as `close()`: the query and matches are gone, so an
       // in-flight continuation must not republish them. `clear()` keeps the
       // session open where `close()` releases it, but both invalidate the
@@ -12427,6 +12464,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
 
   let searchRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   scheduleActiveSearchRefresh = (): void => {
+    completedFallbackSearch = null;
     if (searchRefreshTimer !== null) clearTimeout(searchRefreshTimer);
     if (!searchState.open || !searchState.query) return;
     const scheduledGeneration = searchRequestGeneration;
@@ -12457,19 +12495,24 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
           : safeCall<unknown>(() => host!.refresh(), null);
       if (isPromiseLike(result)) {
         pendingFallbackGeneration = generation;
+        setSearchState({ canReplace: false, canReplaceAll: false });
         void Promise.resolve(result).then(
           (resolved) => {
             if (generation !== searchRequestGeneration || disposed) return;
+            releaseRefreshShellSearch = null;
             pendingFallbackGeneration = null;
+            completedFallbackSearch = editSearch;
             applyHostSearchResult(resolved, readEditCommandCanReplace(), readEditCommandCanReplaceAll());
           },
           () => {
             if (generation !== searchRequestGeneration || disposed) return;
-            pendingFallbackGeneration = null;
+            releaseRefreshShellSearch = null;
             setSearchState({ available: false, reason: SUPERDOC_UI_REASONS.searchUnavailable });
           },
         );
       } else if (result !== null) {
+        releaseRefreshShellSearch = null;
+        completedFallbackSearch = editSearch;
         applyHostSearchResult(result);
       }
     }, 120);
@@ -12528,6 +12571,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     watermark.destroy();
     clearContentControlHighlight();
     disposed = true;
+    completedFallbackSearch = null;
     if (searchRefreshTimer !== null) clearTimeout(searchRefreshTimer);
     searchRefreshTimer = null;
     cancelRefreshShellSearch();

@@ -25,6 +25,8 @@ function createSearchHarness() {
     }),
     getState: vi.fn(() => state),
     refresh,
+    replace: vi.fn(() => ({ status: 'committed', total: 0, activeIndex: -1 })),
+    replaceAll: vi.fn(() => ({ status: 'committed', total: 0, activeIndex: -1 })),
   };
   const superdoc = {
     activeEditor: {
@@ -40,7 +42,12 @@ function createSearchHarness() {
           },
         },
       },
-      editCommands: { search, getSnapshot: () => ({ commands: {} }) },
+      editCommands: {
+        search,
+        getSnapshot: () => ({
+          commands: { 'find.replace': { enabled: true }, 'find.replaceAll': { enabled: true } },
+        }),
+      },
     },
     on: vi.fn(),
     off: vi.fn(),
@@ -54,6 +61,59 @@ function createSearchHarness() {
 }
 
 describe('active search refresh after a document mutation', () => {
+  it('does not advertise replacement while a background refresh is pending', async () => {
+    const harness = createSearchHarness();
+    const ui = createSuperDocUI({ superdoc: harness.superdoc as never });
+    ui.search.find('needle');
+    harness.emitMutation();
+    await vi.waitFor(() => expect(harness.search.refresh).toHaveBeenCalledOnce());
+    expect(ui.search.getSnapshot()).toMatchObject({ canReplace: false, canReplaceAll: false });
+    expect(await ui.search.replaceAll('thread')).toMatchObject({ ok: false, reason: 'operation-unavailable' });
+    expect(harness.search.replaceAll).not.toHaveBeenCalled();
+    harness.settleRefresh({ query: 'needle', total: 2, activeIndex: 0, canReplace: true });
+    await vi.waitFor(() => expect(ui.search.getSnapshot().canReplaceAll).toBe(true));
+    ui.destroy();
+  });
+
+  it('keeps a completed refresh available for an immediate same-query replacement', async () => {
+    const harness = createSearchHarness();
+    const ui = createSuperDocUI({ superdoc: harness.superdoc as never });
+    ui.search.find('needle');
+    harness.emitMutation();
+    await vi.waitFor(() => expect(harness.search.refresh).toHaveBeenCalledOnce());
+    harness.settleRefresh({ query: 'needle', total: 2, activeIndex: 0, canReplace: true });
+    await vi.waitFor(() => expect(ui.search.getSnapshot().canReplaceAll).toBe(true));
+
+    expect(ui.search.find('needle').total).toBe(2);
+    expect(harness.search.query).toHaveBeenCalledTimes(1);
+    expect(await ui.search.replaceAll('thread')).toMatchObject({ ok: true });
+    expect(harness.search.replaceAll).toHaveBeenCalledOnce();
+    ui.destroy();
+  });
+
+  it('requeries when a mutation has queued a refresh but the debounce has not run', () => {
+    const harness = createSearchHarness();
+    const ui = createSuperDocUI({ superdoc: harness.superdoc as never });
+    ui.search.find('needle');
+    harness.emitMutation();
+    ui.search.find('needle');
+    expect(harness.search.query).toHaveBeenCalledTimes(2);
+    ui.destroy();
+  });
+
+  for (const operation of ['replace', 'replaceAll'] as const) {
+    it(`refuses ${operation} against the previous query while a new query is pending`, async () => {
+      const harness = createSearchHarness();
+      const ui = createSuperDocUI({ superdoc: harness.superdoc as never });
+      ui.search.find('needle');
+      harness.search.query.mockImplementationOnce(() => new Promise(() => {}) as never);
+      ui.search.find('unrelated');
+      expect(await ui.search[operation]('changed')).toMatchObject({ ok: false, reason: 'operation-unavailable' });
+      expect(harness.search[operation]).not.toHaveBeenCalled();
+      ui.destroy();
+    });
+  }
+
   it('requeries with the active options and publishes the new count', async () => {
     const harness = createSearchHarness();
     const ui = createSuperDocUI({ superdoc: harness.superdoc as never });
