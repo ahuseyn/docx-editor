@@ -51,6 +51,60 @@ test('accepts canonical example routes and their old aliases', () => {
   withRegistry(({ root }) => assert.deepEqual(findGoLinkProblems(root), []));
 });
 
+test('accepts explicit retirement against the baseline and full history, while rejecting other deletions', () => {
+  withRegistry(({ root, registry, published, write }) => {
+    registry.links.withdrawn = { repository: 'superdoc-dev/demos', path: 'withdrawn' };
+    registry.links.comments = { repository: 'superdoc-dev/demos', path: 'comments' };
+    published.push('withdrawn', 'comments');
+    published.sort();
+    write();
+    git(root, ['init', '--quiet']);
+    git(root, ['add', '.']);
+    git(root, ['-c', 'user.name=SuperDoc CI', '-c', 'user.email=ci@superdoc.dev', 'commit', '--quiet', '-m', 'published']);
+    const baselineRef = git(root, ['rev-parse', 'HEAD']);
+
+    delete registry.links.withdrawn;
+    published.splice(published.indexOf('withdrawn'), 1);
+    write();
+    writeFileSync(path.join(root, 'go-links', 'retired-routes.json'), JSON.stringify(['withdrawn']));
+    assert.deepEqual(findGoLinkProblems(root, { baselineRef, historyRef: 'HEAD' }), []);
+    git(root, ['add', '.']);
+    git(root, ['-c', 'user.name=SuperDoc CI', '-c', 'user.email=ci@superdoc.dev', 'commit', '--quiet', '-m', 'retired']);
+    assert.deepEqual(findGoLinkProblems(root, { historyRef: 'HEAD' }), []);
+
+    delete registry.links.comments;
+    published.splice(published.indexOf('comments'), 1);
+    write();
+    for (const options of [{ baselineRef }, { historyRef: 'HEAD' }]) {
+      assert.match(findGoLinkProblems(root, options).join('\n'), /comments: permanent route was removed/);
+    }
+  });
+});
+
+test('rejects retired routes that remain live in either registry', () => {
+  withRegistry(({ root, registry, published, write }) => {
+    writeFileSync(path.join(root, 'go-links', 'retired-routes.json'), JSON.stringify(['withdrawn']));
+    registry.links.withdrawn = { repository: 'superdoc-dev/demos', path: 'withdrawn' };
+    write();
+    assert.match(findGoLinkProblems(root).join('\n'), /withdrawn: retired route must be absent/);
+    delete registry.links.withdrawn;
+    published.push('withdrawn');
+    write();
+    assert.match(findGoLinkProblems(root).join('\n'), /withdrawn: retired route must be absent/);
+  });
+});
+
+test('rejects invalid, duplicate, and unsorted retirement records', () => {
+  withRegistry(({ root }) => {
+    for (const retired of [{}, [1], ['bad//route'], ['withdrawn', 'withdrawn'], ['zeta', 'alpha']]) {
+      writeFileSync(path.join(root, 'go-links', 'retired-routes.json'), JSON.stringify(retired));
+      assert.match(findGoLinkProblems(root).join('\n'), /go-links\/retired-routes.json:/);
+    }
+    writeFileSync(path.join(root, 'go-links', 'retired-routes.json'), '{');
+    assert.match(findGoLinkProblems(root).join('\n'), /go-links\/retired-routes.json: invalid JSON/);
+  });
+});
+
 test('keeps a published route in the registry', () => {
   withRegistry(({ root, registry, write }) => {
     delete registry.links.react;

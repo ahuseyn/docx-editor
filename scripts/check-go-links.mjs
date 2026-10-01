@@ -126,6 +126,19 @@ export function findGoLinkProblems(publicRoot = defaultPublicRoot, { baselineRef
     'go-links/published-routes.json',
     problems,
   );
+  const retiredPath = path.join(goLinksRoot, 'retired-routes.json');
+  const retired = existsSync(retiredPath) ? readJson(retiredPath, 'go-links/retired-routes.json', problems) : [];
+  const retiredRoutes = new Set();
+  if (
+    !Array.isArray(retired) ||
+    retired.some((route) => typeof route !== 'string' || !routePattern.test(route))
+  ) {
+    problems.push('go-links/retired-routes.json: expected an array of valid route strings');
+  } else if (new Set(retired).size !== retired.length || JSON.stringify(retired) !== JSON.stringify([...retired].sort())) {
+    problems.push('go-links/retired-routes.json: routes must be unique and sorted');
+  } else {
+    for (const route of retired) retiredRoutes.add(route);
+  }
 
   if (config && (config.links?.repo !== 'superdoc/docx-editor' || config.links?.file !== 'go-links/links.json')) {
     problems.push('go-links/linkkeeper.json: must read go-links/links.json from superdoc/docx-editor');
@@ -142,6 +155,11 @@ export function findGoLinkProblems(publicRoot = defaultPublicRoot, { baselineRef
 
   const routes = Object.keys(registry.links).sort();
   const recorded = [...published].sort();
+  for (const route of retiredRoutes) {
+    if (routes.includes(route) || recorded.includes(route)) {
+      problems.push(`${route}: retired route must be absent from the live registry and published routes`);
+    }
+  }
   if (new Set(recorded).size !== recorded.length) {
     problems.push('go-links/published-routes.json: routes must be unique');
   }
@@ -159,7 +177,7 @@ export function findGoLinkProblems(publicRoot = defaultPublicRoot, { baselineRef
   if (baselineRef) {
     const baselineRoutes = readPublishedRoutesAtRef(publicRoot, baselineRef, problems);
     for (const route of baselineRoutes ?? []) {
-      if (!recorded.includes(route)) {
+      if (!recorded.includes(route) && !retiredRoutes.has(route)) {
         problems.push(`${route}: permanent route was removed from go-links/published-routes.json`);
       }
     }
@@ -167,7 +185,7 @@ export function findGoLinkProblems(publicRoot = defaultPublicRoot, { baselineRef
   if (historyRef) {
     const historicalRoutes = readPublishedRouteHistory(publicRoot, historyRef, problems);
     for (const route of historicalRoutes ?? []) {
-      if (!recorded.includes(route)) {
+      if (!recorded.includes(route) && !retiredRoutes.has(route)) {
         problems.push(`${route}: permanent route was removed from go-links/published-routes.json`);
       }
     }
