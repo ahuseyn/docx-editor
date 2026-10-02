@@ -11276,3 +11276,69 @@ describe('bodyMaxY', () => {
     expect(textRemeasure?.[3]?.[0]).toEqual([{ offsetX: 130, width: 370 }]);
   });
 });
+
+describe('SD-5042 resumed multi-page column balancing', () => {
+  const columns = { count: 2, gap: 20 };
+  const options: LayoutOptions = {
+    pageSize: { w: 600, h: 800 },
+    margins: { top: 50, bottom: 50, left: 50, right: 50 },
+    columns,
+    sectionMetadata: [{ sectionIndex: 0 }],
+  };
+  const tail: FlowBlock[] = Array.from({ length: 6 }, (_, index) => ({
+    kind: 'paragraph',
+    id: `tail-${index}`,
+    runs: [{ kind: 'text', text: 'tail', fontFamily: 'Arial', fontSize: 16 }],
+    attrs: { spacing: { after: 6 } },
+  }));
+  const tailMeasures = tail.map(() => makeMeasure([20]));
+  const geometry = (layout: Layout) =>
+    layout.pages.at(-1)!.fragments.map((fragment) => ({
+      blockId: fragment.blockId,
+      x: fragment.x,
+      y: fragment.y,
+    }));
+  const resume = (firstPageNumber?: number) =>
+    layoutDocument(tail, tailMeasures, {
+      ...options,
+      startContext: {
+        pageNumberOffset: 1,
+        activeSectionIndex: 0,
+        activeSectionFirstPageNumber: firstPageNumber,
+        activeColumns: columns,
+      },
+    });
+
+  it('matches full final-page geometry when the section began before the resumed suffix', () => {
+    const section: SectionBreakBlock = {
+      kind: 'sectionBreak',
+      id: 'section',
+      type: 'continuous',
+      columns,
+      margins: {},
+      attrs: { source: 'sectPr', sectionIndex: 0, isFirstSection: true, typeIsExplicit: true },
+    };
+    const lead: FlowBlock = {
+      kind: 'paragraph',
+      id: 'lead',
+      runs: [{ kind: 'text', text: 'lead', fontFamily: 'Arial', fontSize: 16 }],
+    };
+    const full = layoutDocument(
+      [section, lead, ...tail],
+      [{ kind: 'sectionBreak' }, makeMeasure(Array(70).fill(20)), ...tailMeasures],
+      options,
+    );
+    expect(full.pages).toHaveLength(2);
+    expect(geometry(full).map(({ x }) => x)).toEqual([50, 50, 50, 310, 310, 310]);
+    expect(geometry(resume(1))).toEqual(geometry(full));
+  });
+
+  it('keeps the single-page skip when no earlier section page is established', () => {
+    for (const firstPageNumber of [undefined, 2]) {
+      const layout = resume(firstPageNumber);
+      expect(layout.pages.map(({ number }) => number)).toEqual([2]);
+      expect(geometry(layout).map(({ x }) => x)).toEqual([50, 50, 50, 50, 50, 50]);
+      expect(geometry(layout).map(({ y }) => y)).toEqual([50, 76, 102, 128, 154, 180]);
+    }
+  });
+});

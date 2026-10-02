@@ -4182,8 +4182,15 @@ function* layoutDocumentSteps(
       // Page-count probe used by both the multi-page allow rule (3) and the
       // mid-doc multi-page skip below. Computed once and short-circuits at >1.
       let sectionPagesCount = 0;
+      const firstSectionPageNumber = sectionFirstPageNumbers.get(sectionIdx);
       for (const p of pages) {
         if (p.fragments.some((f) => blockSectionMap.get(f.blockId) === sectionIdx)) {
+          // A resumed suffix can contain one local page of a multi-page section.
+          // Its retained physical first page remains part of balancing eligibility.
+          if (firstSectionPageNumber !== undefined && firstSectionPageNumber < p.number) {
+            sectionPagesCount = 2;
+            break;
+          }
           sectionPagesCount += 1;
           if (sectionPagesCount > 1) break;
         }
