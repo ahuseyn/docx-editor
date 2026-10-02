@@ -701,6 +701,7 @@ export type TabRun = RunMarks & {
 
 export type LineBreakRun = {
   kind: 'lineBreak';
+  trackedChange?: TrackedChangeMeta;
   /**
    * Optional attributes carried through from the source document.
    * Mirrors OOXML <w:br> attributes (type/clear) to preserve fidelity.

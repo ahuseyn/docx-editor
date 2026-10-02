@@ -1086,3 +1086,15 @@ describe('deriveBlockVersion - inline boxes', () => {
     expect(deriveBlockVersion(makeParagraph())).toBe(deriveBlockVersion(makeParagraph()));
   });
 });
+
+describe('SD-5361 manual break revision cache identity', () => {
+  it('invalidates the painted paragraph when the break becomes deleted', () => {
+    const plain: ParagraphBlock = { kind: 'paragraph', id: 'manual-break', runs: [{ kind: 'lineBreak' }] };
+    const deleted: ParagraphBlock = {
+      ...plain,
+      runs: [{ kind: 'lineBreak', trackedChange: { kind: 'delete', id: 'revision-1' } }],
+    };
+    expect(deriveBlockVersion(deleted)).not.toBe(deriveBlockVersion(plain));
+    expect(deriveBlockVersion(deleted)).toBe(deriveBlockVersion({ ...deleted }));
+  });
+});

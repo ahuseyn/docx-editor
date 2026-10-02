@@ -509,6 +509,15 @@ export const renderLine = ({
   el.classList.add(CLASS_NAMES.line);
   applyStyles(el, lineStyles(line.lineHeight));
   el.dataset.layoutEpoch = String(runContext.layoutEpoch);
+  const endRun = expandedBlock.runs[line.toRun];
+  const followingRun = expandedBlock.runs[line.toRun + 1];
+  const isDeletedBreak = (run: Run | undefined): boolean =>
+    run?.kind === 'lineBreak' && run.trackedChange?.kind === 'delete';
+  const endsRun = endRun && (!('text' in endRun) || line.toChar >= (endRun.text?.length ?? 0));
+  if (endsRun && isDeletedBreak(followingRun)) el.dataset.v2DeletedLineBreakAfter = 'true';
+  if (line.fromRun === line.toRun && isDeletedBreak(endRun)) {
+    el.dataset.v2DeletedLineBreak = 'true';
+  }
   const paragraphAttrs = (block.attrs as ParagraphAttrs | undefined) ?? {};
   const styleId = paragraphAttrs.styleId;
   if (styleId) {

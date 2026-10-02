@@ -573,3 +573,49 @@ describe('renderLine inline boxes', () => {
     expect(cleared.textContent).toBe('beforeboxedafter');
   });
 });
+
+describe('SD-5361 deleted manual break boundary metadata', () => {
+  for (const deleted of [true, false]) {
+    it(`stamps deletion ownership on the preceding painted line: ${deleted}`, () => {
+      const block: ParagraphBlock = {
+        kind: 'paragraph',
+        id: 'manual-break',
+        runs: [
+          { kind: 'text', text: 'Before', pmStart: 1, pmEnd: 7 },
+          {
+            kind: 'lineBreak',
+            pmStart: 7,
+            pmEnd: 8,
+            ...(deleted ? { trackedChange: { kind: 'delete' as const, id: 'revision-1' } } : {}),
+          },
+          { kind: 'text', text: 'After', pmStart: 8, pmEnd: 13 },
+        ],
+      };
+      const line: Line = {
+        fromRun: 0,
+        fromChar: 0,
+        toRun: 0,
+        toChar: 6,
+        width: 40,
+        ascent: 12,
+        descent: 4,
+        lineHeight: 16,
+      };
+      const element = renderLine({
+        block,
+        line,
+        context: { pageNumber: 1, totalPages: 1, section: 'body' },
+        runContext: makeRunContext(),
+      });
+      expect(element.dataset.v2DeletedLineBreakAfter).toBe(deleted ? 'true' : undefined);
+      expect(element.textContent).toBe('Before');
+      const wrapped = renderLine({
+        block,
+        line: { ...line, toChar: 3 },
+        context: { pageNumber: 1, totalPages: 1, section: 'body' },
+        runContext: makeRunContext(),
+      });
+      expect(wrapped.dataset.v2DeletedLineBreakAfter).toBeUndefined();
+    });
+  }
+});

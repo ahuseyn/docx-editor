@@ -121,7 +121,7 @@ export const deriveParagraphBlockVersion = (
       }
 
       if (run.kind === 'lineBreak') {
-        return 'linebreak';
+        return ['linebreak', run.trackedChange ? trackedChangeMetaSignature(run.trackedChange) : ''].join(',');
       }
 
       if (run.kind === 'tab') {
