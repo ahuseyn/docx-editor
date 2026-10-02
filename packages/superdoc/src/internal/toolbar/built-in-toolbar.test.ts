@@ -126,6 +126,24 @@ async function waitForElement<T extends Element>(find: () => T | null | undefine
 }
 
 describe('BuiltInToolbar', () => {
+  it('assigns a distinct render identity to every default toolbar slot', () => {
+    const toolbar = new BuiltInToolbar({ superdoc: makeHost(), hideButtons: false });
+    try {
+      const names = toolbar.toolbarItems.map((item) => item.name.value);
+      expect(names.filter((name) => name === 'separator').length).toBeGreaterThan(1);
+      for (const items of [toolbar.toolbarItems, toolbar.overflowItems]) {
+        const ids = items.map((item) => item.id.value);
+        expect(new Set(ids).size).toBe(ids.length);
+      }
+      toolbar.onToolbarResize();
+      expect(toolbar.toolbarItems.map((item) => item.name.value)).toEqual(names);
+      const rebuiltIds = toolbar.toolbarItems.map((item) => item.id.value);
+      expect(new Set(rebuiltIds).size).toBe(rebuiltIds.length);
+    } finally {
+      toolbar.destroy();
+    }
+  });
+
   it('leaves Watermark out of the default toolbar and includes it when requested', () => {
     const host = makeHost();
     const defaultToolbar = new BuiltInToolbar({ superdoc: host });

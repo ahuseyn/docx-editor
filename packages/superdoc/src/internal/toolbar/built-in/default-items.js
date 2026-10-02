@@ -288,12 +288,13 @@ export const makeDefaultItems = ({
     },
   });
 
-  // separator
-  const separator = useToolbarItem({
-    type: 'separator',
-    name: 'separator',
-    isNarrow: true,
-  });
+  // ButtonGroup keys siblings by item ID, so every separator slot needs its own item.
+  const createSeparator = () =>
+    useToolbarItem({
+      type: 'separator',
+      name: 'separator',
+      isNarrow: true,
+    });
 
   // italic
   const italic = useToolbarItem({
@@ -1321,16 +1322,16 @@ export const makeDefaultItems = ({
     search,
     zoom,
     fontButton,
-    separator,
+    createSeparator(),
     fontSize,
-    separator,
+    createSeparator(),
     bold,
     italic,
     underline,
     strikethrough,
     colorButton,
     highlight,
-    separator,
+    createSeparator(),
     link,
     image,
     ...(shouldIncludeTableOfContents ? [tableOfContents] : []),
@@ -1338,16 +1339,16 @@ export const makeDefaultItems = ({
     ...(superToolbar.config?.showPageNumberButton || configuredItemNames?.has('pageNumber') ? [pageNumber] : []),
     tableItem,
     tableActionsItem,
-    separator,
+    createSeparator(),
     alignment,
     bulletedList,
     numberedList,
     indentLeft,
     indentRight,
     lineHeight,
-    separator,
+    createSeparator(),
     linkedStyles,
-    separator,
+    createSeparator(),
     ruler,
     measurementUnit,
     ...(shouldIncludeFormattingMarks ? [formattingMarks] : []),
