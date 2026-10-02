@@ -252,7 +252,7 @@ const normalizeJustifiedRuns = (runsForLine: Run[]): Run[] => {
   if (hasNonSpaceText) {
     for (let i = merged.length - 1; i >= 0; i -= 1) {
       const run = merged[i];
-      if ((run.kind !== 'text' && run.kind !== undefined) || !('text' in run)) continue;
+      if ((run.kind !== 'text' && run.kind !== undefined) || !('text' in run)) break;
       const text = run.text ?? '';
       let trimCount = 0;
       for (let j = text.length - 1; j >= 0 && text[j] === ' '; j -= 1) {

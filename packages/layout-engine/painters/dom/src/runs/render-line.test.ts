@@ -37,6 +37,49 @@ describe('renderLine justification', () => {
     ...overrides,
   });
 
+  it.each([0, 1, 2])('preserves %i authored spaces before a line-ending tab', (spaces) => {
+    const text = 'Alpha' + ' '.repeat(spaces);
+    const block: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'terminal-tab',
+      attrs: { alignment: 'justify' },
+      runs: [
+        { kind: 'text', text, fontFamily: 'Arial', fontSize: 16, pmStart: 1, pmEnd: 1 + text.length },
+        { kind: 'tab', width: 20, pmStart: 1 + text.length, pmEnd: 2 + text.length },
+      ],
+    };
+    const line = makeLine(text, { toRun: 1, toChar: 1, segments: undefined });
+    const lineEl = renderLine({
+      block,
+      line,
+      context: { pageNumber: 1, totalPages: 1, section: 'body' },
+      runContext: makeRunContext(),
+    });
+    const paintedText = lineEl.querySelector<HTMLElement>('.superdoc-text-run')!;
+    const tab = lineEl.querySelector<HTMLElement>('.superdoc-tab')!;
+    expect(paintedText.textContent).toBe(text);
+    expect(paintedText.dataset.pmEnd).toBe(tab.dataset.pmStart);
+    expect(block.runs[0]).toMatchObject({ text, pmEnd: 1 + text.length });
+  });
+
+  it('still trims actual trailing wrap spaces when no tab follows them', () => {
+    const text = 'Alpha ';
+    const block: ParagraphBlock = {
+      kind: 'paragraph',
+      id: 'trailing-space',
+      attrs: { alignment: 'justify' },
+      runs: [{ kind: 'text', text, fontFamily: 'Arial', fontSize: 16, pmStart: 1, pmEnd: 7 }],
+    };
+    const lineEl = renderLine({
+      block,
+      line: makeLine(text),
+      context: { pageNumber: 1, totalPages: 1, section: 'body' },
+      runContext: makeRunContext(),
+    });
+    expect(lineEl.querySelector('.superdoc-text-run')?.textContent).toBe('Alpha');
+    expect(block.runs[0]).toMatchObject({ text: 'Alpha ', pmEnd: 7 });
+  });
+
   it('paints measured CJK boundaries without a trailing advance', () => {
     const text = '春天来到';
     const block: ParagraphBlock = {
