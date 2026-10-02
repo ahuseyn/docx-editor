@@ -63,6 +63,12 @@ stabilize_github_apt_mirrors() {
   if [ "${GITHUB_ACTIONS:-}" != "true" ] || [ ! -f "${apt_mirror_file}" ]; then
     return 0
   fi
+  if [ "${apt_mirror_file##*/}" = "blacksmith-ubuntu-mirrors.txt" ]; then
+    # Blacksmith stages package indexes for its managed mirrors. Rewriting the
+    # list discards those indexes and sends apt back to the upstream mirrors.
+    echo "::notice::Preserving Blacksmith-managed apt mirrors and staged package indexes."
+    return 0
+  fi
   if ! grep -qF 'azure.archive.ubuntu.com' "${apt_mirror_file}"; then
     return 0
   fi
