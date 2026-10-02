@@ -238,6 +238,7 @@ onBeforeUnmount(() => {
     @mouseleave="handleTriggerMouseLeave"
     @focusin="handleTriggerMouseEnter"
     @focusout="handleTriggerMouseLeave"
+    @click="close"
   >
     <slot name="trigger" />
   </span>
