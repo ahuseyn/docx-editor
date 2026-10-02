@@ -1680,6 +1680,7 @@ watch(isV2WriteDisabled, (isDisabled) => {
 }
 .tracked-change-text {
   color: var(--sd-ui-comments-body-text, #212121);
+  white-space: pre-wrap;
 }
 .tracked-change-text.is-deleted {
   color: var(--sd-ui-comments-delete-text, #cb0e47);
