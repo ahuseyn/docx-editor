@@ -78,6 +78,8 @@ export type {
   CommentsHandle,
   TrackChangesHandle,
   ContentControlsHandle,
+  BookmarksHandle,
+  BookmarkAddress,
   ContentControlFocusResult,
   ContentControlHighlightResult,
   FontsHandle,

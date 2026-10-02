@@ -35,6 +35,7 @@ export type {
   SelectionPoint,
   TextTarget,
   TextAddress,
+  BookmarkAddress,
   ScrollIntoViewInput,
   ScrollIntoViewOutput,
   DocumentApi,
@@ -96,6 +97,7 @@ import type {
   TrackChangesListResult,
   EntityAddress,
   TextAddress,
+  BookmarkAddress,
   TextTarget,
   ScrollIntoViewInput,
   ScrollIntoViewOutput,
@@ -1179,6 +1181,27 @@ export interface TrackChangesHandle extends SnapshotSubscribable<TrackChangesSli
   scrollTo(input: string | { id: string; story?: unknown }): Promise<WorkflowScrollResult>;
 }
 
+/** Browser bookmark navigation; document bookmark CRUD remains on `activeEditor.doc`. */
+export interface BookmarksHandle {
+  /**
+   * Reveal the start of a body bookmark and select its complete range in editing,
+   * suggesting or viewing mode. A collapsed range places a caret. Accepts an
+   * exact name or the canonical BookmarkAddress returned by the Document API.
+   * Name-only lookup requires a unique document-wide match; an explicit body
+   * address scopes lookup to the body. Navigation is local in shared rooms.
+   *
+   * Defaults to center alignment and instant scrolling. Non-body and table-column
+   * bookmarks, invalid/missing/ambiguous targets fail with `target-unresolved`.
+   * Failed resolution/reveal preserves selection. No document content is changed.
+   * Abandons work after document replacement, content changes or a newer request;
+   * unresolved work times out after 15 seconds. Does not take native input focus.
+   */
+  navigateTo(
+    input: string | BookmarkAddress,
+    options?: Pick<ScrollIntoViewInput, 'block' | 'behavior'>,
+  ): Promise<WorkflowScrollResult>;
+}
+
 /** Content-controls handle. */
 export interface ContentControlsHandle extends SnapshotSubscribable<ContentControlsSlice> {
   /**
@@ -1705,6 +1728,8 @@ export interface SuperDocUI {
   readonly trackChanges: TrackChangesHandle;
   /** Content-controls surface. */
   readonly contentControls: ContentControlsHandle;
+  /** Programmatic body bookmark selection and painted-page reveal. */
+  readonly bookmarks: BookmarksHandle;
   /** Fonts surface. */
   readonly fonts: FontsHandle;
   /** Zoom surface. */

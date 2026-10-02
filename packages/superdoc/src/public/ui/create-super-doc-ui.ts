@@ -41,6 +41,8 @@ import type {
   ContentControlFocusResult,
   ContentControlHighlightResult,
   ContentControlsHandle,
+  BookmarksHandle,
+  BookmarkAddress,
   ContentControlsSlice,
   ContextMenuHandle,
   CustomCommandContext,
@@ -9935,6 +9937,111 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     }
   };
 
+  let bookmarkNavigationGeneration = 0;
+  documentResetHooks.push(() => {
+    bookmarkNavigationGeneration += 1;
+  });
+  const bookmarks: BookmarksHandle = {
+    navigateTo: async (input, options) => {
+      const generation = ++bookmarkNavigationGeneration;
+      const unresolved = (): WorkflowScrollResult => ({
+        success: false,
+        ok: false,
+        reason: SUPERDOC_UI_REASONS.targetUnresolved,
+      });
+      const address: BookmarkAddress =
+        typeof input === 'string' ? { kind: 'entity', entityType: 'bookmark', name: input } : input;
+      if (
+        !address ||
+        address.kind !== 'entity' ||
+        address.entityType !== 'bookmark' ||
+        typeof address.name !== 'string' ||
+        address.name.length === 0 ||
+        (address.story !== undefined &&
+          (!address.story || address.story.kind !== 'story' || address.story.storyType !== 'body'))
+      )
+        return unresolved();
+      const editor = getEditor();
+      if (!editor || disposed) return { success: false, ok: false, reason: SUPERDOC_UI_REASONS.notReady };
+      const doc = getDoc();
+      const api = doc?.bookmarks as LooseRecord | undefined;
+      if (typeof api?.list !== 'function' || typeof api?.get !== 'function') {
+        return { success: false, ok: false, reason: SUPERDOC_UI_REASONS.operationUnavailable };
+      }
+      const helper = getSelectionApplyHelper();
+      if (!('helper' in helper)) return { success: false, ok: false, reason: helper.reason };
+      const host = getHost();
+      if (typeof host?.scrollTargetIntoView !== 'function') {
+        return { success: false, ok: false, reason: SUPERDOC_UI_REASONS.hostCapabilityUnavailable };
+      }
+      const token = metadataResolutionToken();
+      let active = true;
+      const current = (): boolean =>
+        active &&
+        !disposed &&
+        generation === bookmarkNavigationGeneration &&
+        getEditor() === editor &&
+        getDoc() === doc &&
+        getHost() === host &&
+        metadataResolutionToken() === token;
+      const run = async (): Promise<WorkflowScrollResult> => {
+        try {
+          // bookmarks.get picks the first duplicate; navigation must not silently
+          // choose a different occurrence when an imported name is ambiguous.
+          const directory = await api.list.call(api, address.story ? { in: address.story } : {});
+          if (!current()) return unresolved();
+          const items = Array.isArray(directory?.items) ? directory.items : [];
+          if (items.filter((item: LooseRecord) => item?.name === address.name).length !== 1) return unresolved();
+          const info = await api.get.call(api, { target: address });
+          if (!current()) return unresolved();
+          const from = info?.range?.from;
+          const to = info?.range?.to;
+          const pointValid = (point: LooseRecord | undefined): boolean =>
+            typeof point?.blockId === 'string' &&
+            point.blockId.length > 0 &&
+            Number.isInteger(point.offset) &&
+            point.offset >= 0;
+          if (
+            info?.name !== address.name ||
+            (info?.address?.story && info.address.story.storyType !== 'body') ||
+            info?.tableColumn ||
+            !pointValid(from) ||
+            !pointValid(to) ||
+            (from.blockId === to.blockId && from.offset > to.offset)
+          )
+            return unresolved();
+          const result = await scrollTargetIntoView(
+            { kind: 'text', segments: [{ blockId: from.blockId, range: { start: from.offset, end: from.offset } }] },
+            { block: options?.block ?? 'center', behavior: options?.behavior ?? 'instant', shouldContinue: current },
+          );
+          if (!current()) return unresolved();
+          if (!result.ok) return result;
+          const applied = selection.apply({
+            kind: 'selection',
+            start: { kind: 'text', blockId: from.blockId, offset: from.offset },
+            end: { kind: 'text', blockId: to.blockId, offset: to.offset },
+          });
+          return { ...applied, success: applied.ok };
+        } catch {
+          return unresolved();
+        }
+      };
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<WorkflowScrollResult>((resolve) => {
+        timer = setTimeout(() => {
+          active = false;
+          resolve(unresolved());
+        }, 15_000);
+      });
+      try {
+        return await Promise.race([run(), timeout]);
+      } finally {
+        active = false;
+        clearTimeout(timer);
+      }
+    },
+  };
+
   /**
    * Derive the browser-shell's `importedId` carrier-lookup alias from a
    * public list row's `wordRevisionIds` / `sourceIds` provenance fields,
@@ -12661,6 +12768,7 @@ export function createSuperDocUI(options: SuperDocUIOptions): SuperDocUI {
     comments,
     trackChanges,
     contentControls,
+    bookmarks,
     fonts,
     zoom,
     document: documentHandle,
