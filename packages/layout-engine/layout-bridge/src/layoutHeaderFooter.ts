@@ -32,7 +32,6 @@ import {
 } from './resolveHeaderFooterTokens';
 import { FeatureFlags } from './featureFlags';
 import { HeaderFooterCacheLogger } from './instrumentation';
-import { hydrateTableTextboxMeasures } from './hydrateTableTextboxMeasures';
 
 export type HeaderFooterBatch = Partial<Record<'default' | 'first' | 'even' | 'odd', FlowBlock[]>>;
 export type MeasureResolver = (
@@ -650,10 +649,7 @@ export async function layoutHeaderFooterWithCache(
       if (!blocks || blocks.length === 0) continue;
 
       // Clone blocks to avoid mutating the original shared data structure
-      let clonedBlocks = cloneHeaderFooterBlocks(blocks);
-      if (remeasureParagraph) {
-        clonedBlocks = hydrateTableTextboxMeasures(clonedBlocks, remeasureParagraph);
-      }
+      const clonedBlocks = cloneHeaderFooterBlocks(blocks);
 
       // Resolve page number tokens BEFORE measurement
       resolveHeaderFooterTokens(
@@ -708,7 +704,7 @@ export async function layoutHeaderFooterWithCache(
     // Fast path: if variant has no page tokens, create one layout for all pages
     const hasTokens = hasPageTokens(blocks);
     if (!hasTokens) {
-      const layoutBlocks = remeasureParagraph ? hydrateTableTextboxMeasures(blocks, remeasureParagraph) : blocks;
+      const layoutBlocks = blocks;
       const measures = await cache.measureBlocks(
         layoutBlocks,
         constraints,
@@ -795,10 +791,7 @@ export async function layoutHeaderFooterWithCache(
         total: docTotalPages,
       });
       // Clone blocks for this page
-      let clonedBlocks = cloneHeaderFooterBlocks(blocks);
-      if (remeasureParagraph) {
-        clonedBlocks = hydrateTableTextboxMeasures(clonedBlocks, remeasureParagraph);
-      }
+      const clonedBlocks = cloneHeaderFooterBlocks(blocks);
 
       // Resolve page number tokens for this specific page
       const {

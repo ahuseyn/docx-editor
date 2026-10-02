@@ -98,7 +98,6 @@ import {
 import { FeatureFlags } from './featureFlags';
 import { PageTokenLogger, HeaderFooterCacheLogger, globalMetrics } from './instrumentation';
 import { HeaderFooterCacheState, invalidateHeaderFooterCache } from './cacheInvalidation';
-import { hydrateTableTextboxMeasures } from './hydrateTableTextboxMeasures';
 import {
   buildFootnoteRanges,
   getParagraphSpacingAfter,
@@ -3984,14 +3983,6 @@ export async function incrementalLayout(
         `[incrementalLayout] Page token resolution did not converge after ${maxIterations} iterations - stopping`,
       );
     }
-  }
-
-  // Tables are excluded by the proved local profile. Avoid walking the
-  // untouched document merely to discover that there are none.
-  if (layoutReuseSummary.mode === 'full') {
-    currentBlocks = hydrateTableTextboxMeasures(currentBlocks, (block, maxWidth) =>
-      remeasureParagraph(block, maxWidth, 0, undefined, fontContext),
-    );
   }
 
   const pageTokenEnd = performance.now();

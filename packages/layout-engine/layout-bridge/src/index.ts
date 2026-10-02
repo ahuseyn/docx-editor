@@ -91,7 +91,6 @@ export type {
   SectionAwareHeaderFooterMeasurementGroup,
 } from './sectionAwareHeaderFooter';
 export { clearIncrementalModuleState, incrementalLayout, measureCache, normalizeMargin } from './incrementalLayout';
-export { hydrateTableTextboxMeasures } from './hydrateTableTextboxMeasures';
 export { hashMeasureContent } from './cache';
 export type {
   HeaderFooterLayoutResult,
